@@ -78,6 +78,20 @@ ipcMain.handle('users:resolve', async (_e, { username }) => {
   return data;
 });
 
+/** 会话列表 */
+ipcMain.handle('convs:list', async (_e, { userId }) => {
+  const res = await fetch(`http://127.0.0.1:8081/api/conversations?userId=${encodeURIComponent(userId)}`);
+  const data = await res.json();
+  return data;
+});
+
+/** 拉取某会话 afterSeq 之后的消息 */
+ipcMain.handle('convs:pull', async (_e, { conversationId, afterSeq }) => {
+  const res = await fetch(`http://127.0.0.1:8081/api/conversations/${encodeURIComponent(conversationId)}/messages?afterSeq=${afterSeq}&limit=50`);
+  const data = await res.json();
+  return data;
+});
+
 /** 建立长连接(握手) */
 ipcMain.handle('connect:start', async (_e, { token, deviceId }) => {
   if (client) { client.close(); client = null; }

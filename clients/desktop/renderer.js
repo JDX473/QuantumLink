@@ -1,23 +1,24 @@
 /**
  * QuantumLink 桌面客户端 - 渲染进程(UI 逻辑)
  *
- * 通过 window.quantumlink(preload 暴露)与主进程交互:
- * - 登录/注册 → 拿 token/deviceId → connect
- * - 发消息 → 显示本地待发送 → 收 ACK 更新状态
- * - 收消息 → 渲染报文式气泡
+ * 交互模型对齐微信/Discord:
+ * - 左侧会话列表(点击选中)
+ * - 选中会话 → 右侧消息流 → 输入框直接发(无需填接收方)
+ * - 新会话:＋按钮 → 输入用户名 → 解析成 userId → 建会话
  */
 
 const $ = (sel) => document.querySelector(sel);
 const api = window.quantumlink;
 
 // ---- 状态 ----
-let currentUser = null;      // 当前登录的 userId
-let currentConv = null;      // 当前会话 conversationId
-const convs = new Map();     // conversationId → { lastSeq, messages: [] }
+let currentUser = null;        // 当前登录的 userId
+let currentConv = null;        // 当前会话 conversationId
+let convMessages = new Map();  // conversationId → { messages: [] }
 
 // ---- 视图切换 ----
 const loginView = $('#login-view');
 const mainView = $('#main-view');
+let currentTab = 'login';
 
 // 登录/注册 tab
 $('.login-tabs').addEventListener('click', (e) => {
@@ -28,8 +29,6 @@ $('.login-tabs').addEventListener('click', (e) => {
   currentTab = tab.dataset.tab;
   $('#auth-error').textContent = '';
 });
-
-let currentTab = 'login';
 
 // 表单提交
 $('#auth-form').addEventListener('submit', async (e) => {
@@ -48,7 +47,6 @@ $('#auth-form').addEventListener('submit', async (e) => {
     if (currentTab === 'register') {
       const reg = await api.register({ username, password });
       if (!reg || reg.success === false) throw new Error((reg && reg.message) || '注册失败');
-      // 注册成功后自动切到登录
       currentTab = 'login';
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'login'));
       btn.textContent = '连接';
@@ -56,16 +54,16 @@ $('#auth-form').addEventListener('submit', async (e) => {
       return;
     }
 
-    // 登录
     const login = await api.login({ username, password, deviceType: 'desktop' });
     currentUser = login.userId;
     await api.connect({ token: login.token, deviceId: login.deviceId });
 
-    // 切主界面
     loginView.classList.add('hidden');
     mainView.classList.remove('hidden');
-    $('#link-user').textContent = currentUser;
+    $('#link-user').textContent = username; // 显示用户名
     setLinkStatus('connecting', '连接中...');
+
+    await loadConversations(); // 拉会话列表
   } catch (ex) {
     err.textContent = ex.message || '连接失败';
   } finally {
@@ -84,12 +82,55 @@ function setLinkStatus(state, text) {
 }
 
 api.onConnectionStatus(({ status, userId }) => {
-  if (status === 'connected') {
-    setLinkStatus('on', '已连接 · ' + userId);
-  } else if (status === 'closed') {
-    setLinkStatus('', '连接已断开');
-  }
+  if (status === 'connected') setLinkStatus('on', '已连接');
+  else if (status === 'closed') setLinkStatus('', '连接已断开');
 });
+
+// ---- 会话列表 ----
+async function loadConversations() {
+  const data = await api.listConversations({ userId: currentUser });
+  const list = $('#conv-list');
+  list.innerHTML = '';
+
+  if (!data.conversations || data.conversations.length === 0) {
+    list.innerHTML = '<div class="conv-empty">还没有会话,点 ＋ 发起新会话</div>';
+    return;
+  }
+
+  for (const conv of data.conversations) {
+    const item = document.createElement('div');
+    item.className = 'conv-item';
+    item.dataset.convId = conv.conversationId;
+    item.dataset.peer = conv.peerUserId;
+    item.innerHTML = `
+      <div class="conv-item-top">
+        <span class="conv-item-name">${escapeHtml(conv.peerUsername || conv.peerUserId)}</span>
+        <span class="conv-item-time">${conv.lastTime ? formatTime(conv.lastTime) : ''}</span>
+      </div>
+      <div class="conv-item-preview">${escapeHtml(conv.lastMessage || '')}</div>
+    `;
+    item.addEventListener('click', () => openConversation(conv.conversationId, conv.peerUserId, conv.peerUsername));
+    list.appendChild(item);
+  }
+}
+
+// ---- 打开会话 ----
+async function openConversation(conversationId, peerUserId, peerUsername) {
+  currentConv = conversationId;
+  $('#conv-title').textContent = peerUsername || peerUserId;
+  $('#message-stream').innerHTML = '';
+
+  // 高亮选中
+  document.querySelectorAll('.conv-item').forEach(el =>
+    el.classList.toggle('active', el.dataset.convId === conversationId));
+
+  // 增量拉取该会话所有消息(从 seq=0 开始,MVP 简单拉全量)
+  const data = await api.pullMessages({ conversationId, afterSeq: 0 });
+  for (const m of (data.messages || [])) {
+    renderMessage(m, 'delivered');
+  }
+  convMessages.set(conversationId, data.messages || []);
+}
 
 // ---- 消息渲染 ----
 function conversationId(a, b) {
@@ -102,36 +143,30 @@ function renderMessage(msg, status) {
 
   const el = document.createElement('div');
   el.className = 'message ' + (isMine ? 'mine' : 'theirs');
-  el.dataset.msgId = msg.serverMsgId || msg.clientMsgId || '';
+  el.dataset.msgId = msg.serverMsgId || '';
   el.dataset.clientMsgId = msg.clientMsgId || '';
 
-  // 报文头
   const head = document.createElement('div');
   head.className = 'msg-head';
   head.innerHTML = `
-    <span class="msg-sender">${escapeHtml(msg.senderId || '?')}</span>
+    <span class="msg-sender">${escapeHtml(isMine ? '我' : (msg.senderId || '?'))}</span>
     <span class="msg-seq">seq:${msg.seq ?? '—'}</span>
     <span class="msg-time">${msg.serverTime ? formatTime(msg.serverTime) : ''}</span>
   `;
 
-  // 内容
   const body = document.createElement('div');
   body.className = 'msg-body';
   body.textContent = msg.content || '';
 
-  // 状态脚
   const foot = document.createElement('div');
   foot.className = 'msg-foot';
-  const statusText = statusTextFor(status);
-  foot.innerHTML = `<div class="msg-status">${statusText}</div>`;
+  foot.innerHTML = `<div class="msg-status">${statusTextFor(status)}</div>`;
 
   el.appendChild(head);
   el.appendChild(body);
   el.appendChild(foot);
   stream.appendChild(el);
   stream.scrollTop = stream.scrollHeight;
-
-  // 记录 conv 里的消息,用于状态更新
   return el;
 }
 
@@ -152,7 +187,7 @@ function updateMessageStatus(el, status) {
 }
 
 function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 }
 
 function formatTime(ms) {
@@ -160,17 +195,17 @@ function formatTime(ms) {
   return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
 }
 
-// ---- 接收消息 ----
+// ---- 接收消息(实时推送) ----
 api.onMessage((msg) => {
-  const conv = msg.conversationId || conversationId(currentUser, msg.senderId);
-  if (!currentConv || currentConv !== conv) {
-    currentConv = conv;
-    $('#conv-title').textContent = '会话 · ' + conv;
+  // 是当前会话 → 直接渲染
+  if (currentConv === msg.conversationId) {
+    renderMessage(msg, 'delivered');
   }
-  renderMessage(msg, 'delivered'); // 已收到的消息,显示送达
+  // 更新会话列表预览
+  loadConversations();
 });
 
-// ---- ACK:更新自己消息的状态 ----
+// ---- ACK / DELIVER:更新自己消息的状态 ----
 api.onAck((ack) => {
   if (ack.ackType === 'STORE') {
     const el = findMessageByClientId(ack.clientMsgId);
@@ -195,38 +230,18 @@ function findMessageByMsgId(msgId) {
   return document.querySelector(`.message[data-msg-id="${msgId}"]`);
 }
 
-// ---- 发送 ----
-async function send() {
-  const receiver = $('#composer-receiver').value.trim();
+// ---- 发送(当前会话,无需填接收方) ----
+function send() {
   const content = $('#composer-input').value;
-  if (!receiver || !content) return;
+  if (!content || !currentConv) return;
 
-  // 用户填的是用户名(可变),解析成 userId(不可变身份锚点)再发
-  let receiverId;
-  try {
-    const resolved = await api.resolveUser({ username: receiver });
-    if (!resolved.success) {
-      // 可能本身就是 userId,直接试
-      receiverId = receiver;
-    } else {
-      receiverId = resolved.userId;
-    }
-  } catch (e) {
-    // 解析失败,直接用输入值(可能是 userId)
-    receiverId = receiver;
-  }
+  // 从当前会话解析接收方 userId
+  const [a, b] = currentConv.split('#');
+  const receiverId = a === currentUser ? b : a;
 
-  const conv = conversationId(currentUser, receiverId);
-  if (!currentConv || currentConv !== conv) {
-    currentConv = conv;
-    $('#conv-title').textContent = '会话 · ' + receiver + ' (' + receiverId + ')';
-  }
-
-  // 本地乐观渲染
   const msg = { senderId: currentUser, receiverId, content, clientTime: Date.now() };
   const el = renderMessage(msg, 'sending');
 
-  // api.send 是 IPC(异步),返回 Promise;用 then 拿真实 clientMsgId 才能匹配 ACK
   api.send({ receiverId, content, msgType: 'TEXT' })
     .then((cmid) => { if (cmid) el.dataset.clientMsgId = cmid; })
     .catch(() => updateMessageStatus(el, 'failed'));
@@ -241,10 +256,38 @@ $('#composer-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
 $('#composer-input').addEventListener('input', () => {
-  $('#btn-send').disabled = !$('#composer-input').value.trim() || !$('#composer-receiver').value.trim();
+  $('#btn-send').disabled = !$('#composer-input').value.trim();
 });
-$('#composer-receiver').addEventListener('input', () => {
-  $('#btn-send').disabled = !$('#composer-input').value.trim() || !$('#composer-receiver').value.trim();
+
+// ---- 新会话弹窗 ----
+$('#btn-new-conv').addEventListener('click', () => {
+  $('#new-conv-modal').classList.remove('hidden');
+  $('#new-conv-username').value = '';
+  $('#new-conv-error').textContent = '';
+  $('#new-conv-username').focus();
+});
+$('#btn-new-conv-cancel').addEventListener('click', () => {
+  $('#new-conv-modal').classList.add('hidden');
+});
+$('#btn-new-conv-ok').addEventListener('click', async () => {
+  const username = $('#new-conv-username').value.trim();
+  const err = $('#new-conv-error');
+  if (!username) { err.textContent = '请输入用户名'; return; }
+  try {
+    const resolved = await api.resolveUser({ username });
+    if (!resolved.success) { err.textContent = '用户不存在: ' + username; return; }
+    const conv = conversationId(currentUser, resolved.userId);
+    $('#new-conv-modal').classList.add('hidden');
+    await openConversation(conv, resolved.userId, resolved.username);
+    await loadConversations();
+    $('#composer-input').focus();
+  } catch (ex) {
+    err.textContent = ex.message || '解析失败';
+  }
+});
+// Enter 触发
+$('#new-conv-username').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('#btn-new-conv-ok').click();
 });
 
 // 断开
@@ -255,4 +298,5 @@ $('#btn-logout').addEventListener('click', async () => {
   currentUser = null;
   currentConv = null;
   $('#message-stream').innerHTML = '';
+  $('#conv-list').innerHTML = '';
 });

@@ -14,6 +14,10 @@ contextBridge.exposeInMainWorld('quantumlink', {
   // 用户解析(用户名 → userId)
   resolveUser: (info) => ipcRenderer.invoke('users:resolve', info),
 
+  // 会话
+  listConversations: (info) => ipcRenderer.invoke('convs:list', info),
+  pullMessages: (info) => ipcRenderer.invoke('convs:pull', info),
+
   // 连接
   connect: (info) => ipcRenderer.invoke('connect:start', info),
   close: () => ipcRenderer.invoke('connect:close'),
