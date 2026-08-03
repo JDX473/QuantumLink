@@ -162,7 +162,7 @@ async function loadConversations() {
     item.dataset.convId = conv.conversationId;
     item.dataset.peer = conv.peerUserId;
     const avatarHtml = conv.peerAvatar
-      ? `<img class="conv-avatar" src="${escapeHtml(conv.peerAvatar)}" alt="" onerror="this.style.display='none'">`
+      ? `<img class="conv-avatar" src="${escapeHtml(conv.peerAvatar)}" alt="">`
       : `<span class="conv-avatar conv-avatar-placeholder">${escapeHtml((conv.peerUsername || '?')[0])}</span>`;
     item.innerHTML = `
       <div class="conv-item-row">
@@ -218,7 +218,7 @@ function renderMessage(msg, status) {
   // 显示头像 + 用户名(senderName),不暴露 userId
   const displayName = isMine ? '我' : (msg.senderName || msg.senderId || '?');
   const avatarHtml = msg.senderAvatar
-    ? `<img class="msg-avatar" src="${escapeHtml(msg.senderAvatar)}" alt="" onerror="this.style.display='none'">`
+    ? `<img class="msg-avatar" src="${escapeHtml(msg.senderAvatar)}" alt="">`
     : `<span class="msg-avatar msg-avatar-placeholder">${escapeHtml((displayName || '?')[0])}</span>`;
   head.innerHTML = `
     <span class="msg-avatar-wrap">${avatarHtml}</span>

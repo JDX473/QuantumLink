@@ -167,7 +167,7 @@ html, body {
 .conv-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 20px 0; }
 
 .conv-item-row { display: flex; align-items: center; gap: 10px; }
-.conv-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.conv-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: #2A3445; }
 .conv-avatar-placeholder {
   width: 36px; height: 36px; border-radius: 50%;
   background: var(--signal); color: var(--ink);
@@ -233,7 +233,7 @@ html, body {
   color: var(--muted);
 }
 .msg-avatar-wrap { display: inline-flex; }
-.msg-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; }
+.msg-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; background: #2A3445; }
 .msg-avatar-placeholder {
   width: 22px; height: 22px; border-radius: 50%;
   background: var(--quantum); color: #fff;
