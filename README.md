@@ -75,10 +75,12 @@ java -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
 - **2026-08-03(下行信封重构)**:DownstreamEnvelope 从 `{targetUserId, contentType, bodyJson}` 重构为 **`{to, deviceId, type, data}`**——投递元数据与内容分离,data 用嵌套对象(非 JSON 字符串),避免双重转义;connect 只解析顶层,不懂业务内容。重构后链路验证通过。
 - **2026-08-03(Phase 2 可靠投递-客户端重传)**:ACK 加 clientMsgId(客户端精确匹配);客户端发送确认机——pending 表 + 3s 超时重传 + 指数退避(封顶48s/6次) + 断线感知(重连后 flush pending);修复 seq 分配 bug(FOR UPDATE 锁行)、客户端重启回绕(会话随机前缀)、握手误 flush、重连计数误重置。**验证**:断线重传、幂等重传、seq 递增、双向互聊全部通过。
 - **2026-08-03(有序性重构:业务层取号)**:seq 分配从 DB FOR UPDATE 改为 **Redis INCR conv_seq:{conversationId}**(业务层集中发号)。保序链路:EventLoop 按到达顺序提交 → **per-conversation 单线程 executor** 串行 produce(同步 send)→ 按会话选 MQ 队列 → chat **MessageListenerOrderly** 队列级串行消费。修复"并发消费导致 seq 乱序"根因(抢锁顺序≠到达顺序,必须 FIFO 队列)。**验证**:同会话连发 5 条,seq 与发送顺序完全一致;双向互聊、断线重传回归通过。
+- **2026-08-03(有序性技术文章)**:沉淀 [docs/ordering-article.md](docs/ordering-article.md)——完整记录消息有序性从踩坑(DB锁/MQ串行/抢锁/异步send/EventLoop阻塞)到解决(Redis INCR + 四跳保序)的思考过程,含 10 个面试问答。
 
 ## 文档
 
 - [docs/mvp-design.md](docs/mvp-design.md) — MVP 设计与实现方案(权威)
+- [docs/ordering-article.md](docs/ordering-article.md) — **IM 消息有序性:从踩坑到解决**(深度技术文章,含 5 个坑 + 保序架构 + 面试问答)
 
 ## 提交规矩
 
