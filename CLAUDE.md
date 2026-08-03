@@ -24,7 +24,7 @@ QuantumLink:27 届秋招主项目,Java 后端深度 IM。从 0 写,目标是撑�
 ## 设计决策记录(实现时遵守)
 
 - **协议**:自定义 TCP(定长头+变长体+crc32),非 WebSocket。帧头 `magic(4B)+version(1B)+type(1B)+bodyLen(4B)`+crc32(4B)帧尾,帧头无 seq(消息身份在 body)。粘包拆包用 `LengthFieldBasedFrameDecoder(lengthFieldOffset=6, lengthFieldLength=4, lengthAdjustment=4)`。HANDSHAKE/HANDSHAKE_ACK 握手鉴权;PING/PONG 心跳。
-- **身份体系(服务端分配为主)**:user_id(注册分配)、device_id(首次登录分配,区分客户端/多端基础)、server_msg_id(落库生成,消息正式身份)。幂等键 client_msg_id 客户端生成(`device_id+自增`),去重键 = sender_id+client_msg_id。下行带 server_msg_id+seq,不带 client_msg_id。
+- **身份体系(服务端分配为主)**:user_id(注册分配)、device_id(首次登录分配,区分客户端/多端基础)、server_msg_id(落库生成,消息正式身份)。幂等键 client_msg_id 客户端生成(`device_id+自增`),去重键 = sender_id+client_msg_id。下行带 server_msg_id+seq,不带 client_msg_id。**登录注册**:`POST /api/auth/register` + `POST /api/auth/login`(SHA-256+salt),登录返回 token/deviceId/userId,存 Redis `im:token:` 供 connect 握手校验。
 - **有序 seq**:服务端落库同一事务内 `UPDATE im_conversation SET last_seq=last_seq+1` 分配;不用 Redis INCR。
 - **可靠投递**:双 ACK——**STORE**(chat 落库,可靠锚点)+ **DELIVER**(接收方客户端回 DELIVER_ACK 帧 → connect 转发 deliver_ack topic → chat 更新状态 SENT→DELIVERED → 回 DELIVER 给发送方)。发送方超时同一 client_msg_id 重传(3s 超时、指数退避、上限 6 次)。
 - **客户端发送确认机**:pending 表 + 超时重传 + 断线感知(重连后 flush pending)。client_msg_id 必须**每次会话唯一**(deviceId + 会话随机前缀 + 自增),防客户端重启回绕撞 TTL 内旧 key。ACK 必须回带 client_msg_id,客户端才能精确匹配。

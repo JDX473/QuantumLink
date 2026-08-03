@@ -79,6 +79,7 @@ java -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
 - **2026-08-03(两段式设计:绑定seq后并发)**:按"取seq串行、后续并发"重构 MessageService——保序段(Orderly消费:去重+Redis INCR取seq+绑定)极短且串行;并发段(线程池:落库+ACK+推送)全并行。**顺序在取seq时钉死,后续并发不破坏**。验证:5条消息seq=[1,2,3,4,5]与发送顺序一致,双向互聊/断线重传回归通过。
 - **2026-08-03(离线消息 + 增量拉取)**:消息先落库,离线不推送;上线按 seq 增量拉取。新增 `GET /api/conversations/{convId}/messages?afterSeq=&limit=` 接口(MessageController + MessageQueryService),按 seq 升序分页返回 + serverMaxSeq 水位线;客户端维护 per-conv 位点,重连后补拉。修复 `@PathVariable` 缺参数名导致 HTTP 500。**验证**:B 离线收 3 条,重连后按 seq 补回,5 条全部到达且 seq 严格递增。
 - **2026-08-03(DELIVER 回执:双 ACK 闭环)**:可靠投递第二跳——接收方 B 收到消息自动回 DELIVER_ACK(新增 FrameType.DELIVER_ACK),connect 转发到 `deliver_ack` topic,chat 更新消息状态 SENT→DELIVERED 并回 DELIVER 给 A。**双 ACK 完整**:A 看到"已存储"(STORE)+"对方已送达"(DELIVER)。验证:DB 状态更新为 DELIVERED。修复 Node 端缺 DELIVER_ACK 帧类型定义。
+- **2026-08-03(登录注册)**:真实注册登录流程替代手动塞 token——`POST /api/auth/register`(校验用户名唯一)+ `POST /api/auth/login`(密码 SHA-256+salt 校验 → 生成 token + 分配 device_id → 存 Redis `im:token:` → 落 device 表),返回 `{token, deviceId, userId}`。**验证**:注册/登录/握手/互通全流程通过,device_id 与 user_id 服务端分配。
 
 ## 文档
 
