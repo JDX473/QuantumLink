@@ -43,7 +43,7 @@ html, body {
 
 /* 无边框窗口拖拽区(标题栏) */
 .link-bar { -webkit-app-region: drag; }
-.link-bar button, .link-bar input, .link-bar .light { -webkit-app-region: no-drag; }
+.link-bar button, .link-bar input, .link-bar .light, .link-bar .me-wrap { -webkit-app-region: no-drag; }
 
 .mono { font-family: var(--mono); font-size: 12px; }
 .muted { color: var(--muted); }
@@ -129,7 +129,9 @@ html, body {
 
 .link-bar {
   height: 44px;
-  padding: 0 16px;
+  padding: 0 16px 0 16px;
+  /* 右侧留出 titleBarOverlay 系统按钮空间(最小化/最大化/关闭,约 138px) */
+  padding-right: 140px;
   display: flex; align-items: center; justify-content: space-between;
   background: var(--ink);
   border-bottom: 1px solid var(--line);
