@@ -55,7 +55,7 @@ ipcMain.handle('auth:login', async (_e, { username, password, deviceType }) => {
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.message || 'login failed');
-  return { token: data.token, deviceId: data.deviceId, userId: data.userId };
+  return { token: data.token, deviceId: data.deviceId, userId: data.userId, username: data.username, avatarUrl: data.avatarUrl };
 });
 
 /** 注册 */
