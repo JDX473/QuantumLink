@@ -1,8 +1,9 @@
 -- QuantumLink IM 建库建表脚本
 -- 可靠性锚点:MySQL。先落库,后缓存。
+-- 独立库 quantumlink(与旧项目 im 库隔离,只放本项目的表)
 
-CREATE DATABASE IF NOT EXISTS `im` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `im`;
+CREATE DATABASE IF NOT EXISTS `quantumlink` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `quantumlink`;
 
 -- 用户表:user_id 服务端分配(用户身份)
 CREATE TABLE IF NOT EXISTS `im_user` (

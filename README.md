@@ -70,6 +70,7 @@ java -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
 - **2026-08-03(Phase 1 连接层)**:im-connect 长连接层完成——Netty TCP 服务器、握手鉴权(token 查 Redis)、心跳(PING/PONG + Redis 续期)、EventLoop 异步化(业务线程池)、会话注册、上行 RocketMQ。修复关键 bug:`ctx.writeAndFlush` 会绕过末尾 encoder,须用 `channel.writeAndFlush`。
 - **2026-08-03(Phase 1 业务层)**:im-chat 业务层完成——消费 client2server、幂等(SETNX + DB 唯一索引)、落库 + 事务内分配 seq、回 ACK-STORE、下行 server2client。**端到端链路打通**:客户端→connect→MQ→chat→MySQL 落库→ACK,幂等去重验证通过。
 - **2026-08-03(连接管理改造)**:ChannelManager 改为**嵌套 Map**(userId → Map&lt;deviceId, Channel&gt;),语义对应"用户→设备→连接"的一对多模型;computeIfAbsent 保证并发安全,新增 getAll/deviceCount/removeAll 按用户维度操作,4 个并发单测通过。
+- **2026-08-03(独立数据库)**:新建独立库 `quantumlink`(与旧项目 `im` 库隔离),只含本项目的 4 张表;schema.sql 与 application.yml 已切换,消息落库验证通过。
 
 ## 文档
 

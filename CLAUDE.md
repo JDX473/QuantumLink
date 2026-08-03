@@ -46,7 +46,7 @@ mvn test
 
 ## 本机中间件(不用 Docker,用户本地已装)
 
-- MySQL 8: `127.0.0.1:3306`, root/123456, 库 `im`
+- MySQL 8: `127.0.0.1:3306`, root/123456, 库 `quantumlink`(独立库,与旧项目 `im` 库隔离)
 - Redis: `F:\Study\Redis4`(redis-server.exe, 127.0.0.1:6379, 无密码)
 - RocketMQ 5.3.1: `F:\Study\RocketMQ\rocketmq-all-5.3.1-bin-release`(namesrv 9876 / broker 10911, 本机直接跑 .cmd)
 - 构建需 JDK 17(`D:\jdk17`), 本机默认 JAVA_HOME 是 JDK8

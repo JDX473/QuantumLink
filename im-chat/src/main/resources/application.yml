@@ -6,9 +6,9 @@ spring:
     name: im-chat
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    # 本机 MySQL:3306,root/123456,库 im
+    # 本机 MySQL:3306,root/123456,库 quantumlink(独立库,与旧项目 im 隔离)
     # 注意:Connector/J 8.3 的 characterEncoding 只认 utf8(MySQL 的 utf8 即 utf8mb4)
-    url: jdbc:mysql://127.0.0.1:3306/im?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://127.0.0.1:3306/quantumlink?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: root
     password: 123456
   data:
