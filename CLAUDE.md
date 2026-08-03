@@ -30,6 +30,7 @@ QuantumLink:27 届秋招主项目,Java 后端深度 IM。从 0 写,目标是撑�
 - **客户端发送确认机**:pending 表 + 超时重传 + 断线感知(重连后 flush pending)。client_msg_id 必须**每次会话唯一**(deviceId + 会话随机前缀 + 自增),防客户端重启回绕撞 TTL 内旧 key。ACK 必须回带 client_msg_id,客户端才能精确匹配。
 - **seq 分配(业务层取号)**:用 **Redis INCR `im:conv:seq:{conversationId}`** 集中发号(不是 DB 自增/锁)。**两段式**:保序段(Orderly 消费:去重+取seq+绑定)串行且极短,顺序在此钉死;并发段(线程池:落库+ACK+推送)全并行——顺序由 seq 承载,后续并发不破坏。保序链路:EventLoop 按到达顺序提交 → per-conversation 单线程 executor 串行 produce(同步 send)→ 按会话选同一 MQ 队列 → chat Orderly 串行取号。关键教训:并发时"抢锁顺序≠到达顺序",必须 FIFO 队列;异步 send 无法保序,必须同步。
 - **缓存**:先 MySQL 后 Redis,消息 append-only 不双删,客户端 seq 补拉自愈。
+- **离线消息 + 增量拉取**:消息一律先落库;在线推送、离线不推送,上线 `GET /api/conversations/{convId}/messages?afterSeq=` 按 seq 增量拉取(按 seq 拉而非时间,支持断点续拉/多端对齐)。客户端维护 per-conv 位点 lastSeq,重连后补拉。Spring MVC `@PathVariable`/`@RequestParam` 必须显式写参数名(编译没加 -parameters)。
 - **心跳**:客户端 10s PING,服务端 IdleState 30s 兜底断连,Redis TTL=30s。
 - **MVP 范围**:单聊/单节点/无网关/无群聊/无多端/有 token 鉴权/必须有 RocketMQ。压测后置。
 - **架构**:im-common / im-connect(port 9999,Netty) / im-chat(port 8081,Spring Boot) / im-loadtest。connect 与 chat 零代码依赖,只经 MQ+Redis 通信。

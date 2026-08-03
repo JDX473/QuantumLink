@@ -77,6 +77,7 @@ java -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
 - **2026-08-03(有序性重构:业务层取号)**:seq 分配从 DB FOR UPDATE 改为 **Redis INCR conv_seq:{conversationId}**(业务层集中发号)。保序链路:EventLoop 按到达顺序提交 → **per-conversation 单线程 executor** 串行 produce(同步 send)→ 按会话选 MQ 队列 → chat **MessageListenerOrderly** 队列级串行消费。修复"并发消费导致 seq 乱序"根因(抢锁顺序≠到达顺序,必须 FIFO 队列)。**验证**:同会话连发 5 条,seq 与发送顺序完全一致;双向互聊、断线重传回归通过。
 - **2026-08-03(有序性技术文章)**:沉淀 [docs/ordering-article.md](docs/ordering-article.md)——完整记录消息有序性从踩坑(DB锁/MQ串行/抢锁/异步send/EventLoop阻塞)到解决(Redis INCR + 四跳保序)的思考过程,含 10 个面试问答。
 - **2026-08-03(两段式设计:绑定seq后并发)**:按"取seq串行、后续并发"重构 MessageService——保序段(Orderly消费:去重+Redis INCR取seq+绑定)极短且串行;并发段(线程池:落库+ACK+推送)全并行。**顺序在取seq时钉死,后续并发不破坏**。验证:5条消息seq=[1,2,3,4,5]与发送顺序一致,双向互聊/断线重传回归通过。
+- **2026-08-03(离线消息 + 增量拉取)**:消息先落库,离线不推送;上线按 seq 增量拉取。新增 `GET /api/conversations/{convId}/messages?afterSeq=&limit=` 接口(MessageController + MessageQueryService),按 seq 升序分页返回 + serverMaxSeq 水位线;客户端维护 per-conv 位点,重连后补拉。修复 `@PathVariable` 缺参数名导致 HTTP 500。**验证**:B 离线收 3 条,重连后按 seq 补回,5 条全部到达且 seq 严格递增。
 
 ## 文档
 

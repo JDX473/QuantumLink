@@ -54,6 +54,11 @@ class ImClient {
     this.clientSeq = 0; // 本地自增
     // 会话随机前缀:防止客户端重启后 clientSeq 归零,生成的 clientMsgId 撞到 TTL 内的旧 key
     this.sessionNonce = Math.floor(Math.random() * 0xFFFFFF).toString(16);
+
+    // 增量拉取:conversationId → 已同步的最大 seq(位点)
+    this.conversationLastSeq = new Map();
+    // 离线补拉 HTTP 接口(im-chat 业务层)
+    this.apiBase = opts.apiBase || 'http://127.0.0.1:8081';
   }
 
   // ==================== 连接生命周期 ====================
@@ -119,6 +124,7 @@ class ImClient {
       if (this.everConnected) {
         this._flushPending();
         this.reconnectAttempts = 0; // 重连成功,重置退避计数
+        this._pullOffline();        // 重连后补拉离线期间的消息
       }
       this.everConnected = true;
     } else {
@@ -128,6 +134,13 @@ class ImClient {
   }
 
   _onMessage(body) {
+    // 更新该会话位点(seq 单调递增)
+    if (body && body.conversationId && body.seq != null) {
+      const last = this.conversationLastSeq.get(body.conversationId) || 0;
+      if (body.seq > last) {
+        this.conversationLastSeq.set(body.conversationId, body.seq);
+      }
+    }
     if (this.handlers.onMessage) this.handlers.onMessage(body);
   }
 
@@ -225,6 +238,48 @@ class ImClient {
     }
     if (this.pending.size > 0) {
       console.log(`[client] 重连成功,重传 ${this.pending.size} 条待确认消息`);
+    }
+  }
+
+  // ==================== 离线消息 + 增量拉取 ====================
+
+  /**
+   * 补拉离线消息:按会话位点(afterSeq)调 HTTP 接口,拉取之后的消息。
+   * 用于重连后/上线时,把离线期间的消息补回来。
+   */
+  async _pullOffline() {
+    // 需要知道有哪些会话 → 客户端本地维护的会话位点表里有
+    for (const [conversationId, lastSeq] of this.conversationLastSeq) {
+      await this._pullConversation(conversationId, lastSeq);
+    }
+  }
+
+  /** 拉取某个会话 afterSeq 之后的消息,支持分页 */
+  async _pullConversation(conversationId, afterSeq) {
+    try {
+      const url = `${this.apiBase}/api/conversations/${encodeURIComponent(conversationId)}/messages?afterSeq=${afterSeq}&limit=50`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.error(`[client] 拉取失败: HTTP ${res.status}`);
+        return;
+      }
+      const data = await res.json();
+      for (const item of (data.messages || [])) {
+        if (this.handlers.onMessage) this.handlers.onMessage(item);
+        // 更新位点
+        if (item.seq > (this.conversationLastSeq.get(conversationId) || 0)) {
+          this.conversationLastSeq.set(conversationId, item.seq);
+        }
+      }
+      if (data.messages && data.messages.length > 0) {
+        console.log(`[client] 增量拉取 ${conversationId}: ${data.messages.length} 条(afterSeq=${afterSeq}, serverMax=${data.serverMaxSeq})`);
+      }
+      // 有更多则继续拉
+      if (data.hasMore) {
+        await this._pullConversation(conversationId, data.messages[data.messages.length - 1].seq);
+      }
+    } catch (e) {
+      console.error(`[client] 拉取异常: ${e.message}`);
     }
   }
 
