@@ -6,16 +6,16 @@
 
 ```
 客户端(自定义 TCP)
-   │  HANDSHAKE / MSG / PING
+   │  HANDSHAKE / MSG / PING / DELIVER_ACK
    ▼
 im-connect(port 9999,Netty 长连接层)
-   │  握手鉴权 · 心跳 · EventLoop 异步化 · 会话注册
+   │  握手鉴权 · 心跳 · EventLoop 异步化 · per-conversation 保序 · 会话注册
    │
-   │  RocketMQ(上行 im_upstream)
+   │  RocketMQ(上行 client2server / deliver_ack)
    ▼
 im-chat(port 8081,Spring Boot 业务层)
-   │  鉴权 · 幂等 · 落库(分配 seq) · 离线 · 回执
-   │  RocketMQ(下行 im_downstream)
+   │  注册登录 · 幂等 · 落库(Redis INCR 取 seq) · 离线拉取 · 双 ACK 回执
+   │  RocketMQ(下行 server2client)
    ▼
 im-connect → 目标客户端
 ```
@@ -27,9 +27,9 @@ im-connect → 目标客户端
 | 模块 | 端口 | 职责 | 状态 |
 |------|------|------|------|
 | im-common | — | 自定义 TCP 协议帧、DTO、工具 | ✅ 协议编解码+测试通过 |
-| im-connect | 9999 | Netty 长连接层:握手鉴权/心跳/上行 | ✅ 端到端打通 |
+| im-connect | 9999 | Netty 长连接层:握手鉴权/心跳/EventLoop异步/保序/上行下行 | ✅ 端到端打通 |
 | im-gateway | 88 | 入口代理(负载均衡+Nacos 路由) | MVP 后置 |
-| im-chat | 8081 | 业务层:鉴权/持久化/seq/离线/回执 | ✅ 端到端打通 |
+| im-chat | 8081 | 业务层:注册登录/幂等/落库/seq/离线拉取/双ACK | ✅ 端到端打通 |
 | im-loadtest | — | 压测客户端 | MVP 后置 |
 
 ## 技术栈
@@ -50,6 +50,14 @@ java -jar im-chat/target/im-chat-1.0.0-SNAPSHOT.jar
 
 # 4. 启动长连接层
 java -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
+
+# 5. 注册登录拿 token + deviceId(握手时携带)
+curl -X POST http://127.0.0.1:8081/api/auth/register \
+  -H "Content-Type: application/json" -d '{"username":"alice","password":"pass123"}'
+curl -X POST http://127.0.0.1:8081/api/auth/login \
+  -H "Content-Type: application/json" -d '{"username":"alice","password":"pass123","deviceType":"desktop"}'
+
+# 6. 用返回的 token/deviceId 连接(见 clients/verify-auth.js 完整示例)
 ```
 
 ## 关键设计决策
@@ -57,11 +65,11 @@ java -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
 | 决策 | 理由 |
 |------|------|
 | 自定义 TCP 协议 | 粘包拆包/握手/心跳全是可深挖的真实考点;比 WebSocket 硬核 |
-| msgId 客户端生成 | 幂等键必须客户端生成,重发才能带同一个;消息身份 server_msg_id 由服务端生成 |
-| seq 服务端 DB 自增 | 排序号必须与落库同事务,不用 Redis INCR(会重复) |
-| 双 ACK(STORE/DELIVER) | 区分"已存储"与"已送达",覆盖不同故障边界 |
+| client_msg_id 客户端生成 | 幂等键必须客户端生成,重发才能带同一个;消息身份 server_msg_id 由服务端生成 |
+| seq 用 Redis INCR 业务层取号 | 会话级集中发号,唯一且递增;配合 per-conversation 保序链路,顺序 = 发送顺序 |
+| 双 ACK(STORE/DELIVER) | 区分"已存储"与"对方已送达",覆盖不同故障边界 |
 | 先落库后缓存 | 可靠锚点在 MySQL,Redis 可丢弃,客户端 seq 补拉自愈 |
-| EventLoop 只收发 | 阻塞调用丢业务线程池,避免线程雪崩 |
+| EventLoop 只收发 | 阻塞调用丢 per-conversation executor,保序且不阻塞 EventLoop |
 
 ## 项目进展
 
@@ -80,6 +88,12 @@ java -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
 - **2026-08-03(离线消息 + 增量拉取)**:消息先落库,离线不推送;上线按 seq 增量拉取。新增 `GET /api/conversations/{convId}/messages?afterSeq=&limit=` 接口(MessageController + MessageQueryService),按 seq 升序分页返回 + serverMaxSeq 水位线;客户端维护 per-conv 位点,重连后补拉。修复 `@PathVariable` 缺参数名导致 HTTP 500。**验证**:B 离线收 3 条,重连后按 seq 补回,5 条全部到达且 seq 严格递增。
 - **2026-08-03(DELIVER 回执:双 ACK 闭环)**:可靠投递第二跳——接收方 B 收到消息自动回 DELIVER_ACK(新增 FrameType.DELIVER_ACK),connect 转发到 `deliver_ack` topic,chat 更新消息状态 SENT→DELIVERED 并回 DELIVER 给 A。**双 ACK 完整**:A 看到"已存储"(STORE)+"对方已送达"(DELIVER)。验证:DB 状态更新为 DELIVERED。修复 Node 端缺 DELIVER_ACK 帧类型定义。
 - **2026-08-03(登录注册)**:真实注册登录流程替代手动塞 token——`POST /api/auth/register`(校验用户名唯一)+ `POST /api/auth/login`(密码 SHA-256+salt 校验 → 生成 token + 分配 device_id → 存 Redis `im:token:` → 落 device 表),返回 `{token, deviceId, userId}`。**验证**:注册/登录/握手/互通全流程通过,device_id 与 user_id 服务端分配。
+- **2026-08-03(合并到 master)**:dev 分支验证通过的全部功能(可靠投递闭环 + 登录注册)合并到 `master`。之后新功能仍在 `dev` 开发,验证后 merge。
+
+## 分支
+
+- `master`:稳定版,已验证的功能
+- `dev`:新功能开发分支(当前)
 
 ## 文档
 
