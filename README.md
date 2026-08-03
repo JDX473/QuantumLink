@@ -81,7 +81,7 @@ java -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
 ## 文档
 
 - [docs/mvp-design.md](docs/mvp-design.md) — MVP 设计与实现方案(权威)
-- [docs/ordering-article.md](docs/ordering-article.md) — **IM 消息有序性:从踩坑到解决**(深度技术文章,含 5 个坑 + 保序架构 + 面试问答)
+- [docs/ordering-article.md](docs/ordering-article.md) — **IM 消息有序性:从踩坑到解决**(深度技术文章,含 5 个坑 + 保序架构 + **分布式保序** + 11 个面试问答)
 
 ## 提交规矩
 
