@@ -1,0 +1,77 @@
+# QuantumLink IM
+
+高并发 IM 即时通讯系统(Java 后端秋招主项目)。从 0 编写,目标是每个模块能讲清机制、有取舍、可压测。
+
+## 架构
+
+```
+客户端(自定义 TCP)
+   │  HANDSHAKE / MSG / PING
+   ▼
+im-connect(port 9999,Netty 长连接层)
+   │  握手鉴权 · 心跳 · EventLoop 异步化 · 会话注册
+   │
+   │  RocketMQ(上行 im_upstream)
+   ▼
+im-chat(port 8081,Spring Boot 业务层)
+   │  鉴权 · 幂等 · 落库(分配 seq) · 离线 · 回执
+   │  RocketMQ(下行 im_downstream)
+   ▼
+im-connect → 目标客户端
+```
+
+**两层解耦**:`im-connect`(长连接)与 `im-chat`(业务)**零代码依赖**,只经 RocketMQ + Redis 通信,可独立部署/扩容。
+
+## 模块
+
+| 模块 | 端口 | 职责 | 状态 |
+|------|------|------|------|
+| im-common | — | 自定义 TCP 协议帧、DTO、工具 | 骨架 |
+| im-connect | 9999 | Netty 长连接层:握手鉴权/心跳/上行 | 骨架 |
+| im-gateway | 88 | 入口代理(负载均衡+Nacos 路由) | MVP 后置 |
+| im-chat | 8081 | 业务层:鉴权/持久化/seq/离线/回执 | 骨架 |
+| im-loadtest | — | 压测客户端 | MVP 后置 |
+
+## 技术栈
+
+Java 17 · Maven · Netty 4.1 · RocketMQ 5 · Redis 7 · MySQL 8 · Spring Boot 3 · MyBatis-Plus · Lettuce
+
+## 快速开始
+
+```bash
+# 1. 启动中间件(Docker)
+docker compose -f docker/docker-compose.yml up -d
+
+# 2. 构建
+mvn clean package -DskipTests
+
+# 3. 启动业务层
+java -jar im-chat/target/im-chat-1.0.0-SNAPSHOT.jar
+
+# 4. 启动长连接层
+java -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
+```
+
+## 关键设计决策
+
+| 决策 | 理由 |
+|------|------|
+| 自定义 TCP 协议 | 粘包拆包/握手/心跳全是可深挖的真实考点;比 WebSocket 硬核 |
+| msgId 客户端生成 | 幂等键必须客户端生成,重发才能带同一个;消息身份 server_msg_id 由服务端生成 |
+| seq 服务端 DB 自增 | 排序号必须与落库同事务,不用 Redis INCR(会重复) |
+| 双 ACK(STORE/DELIVER) | 区分"已存储"与"已送达",覆盖不同故障边界 |
+| 先落库后缓存 | 可靠锚点在 MySQL,Redis 可丢弃,客户端 seq 补拉自愈 |
+| EventLoop 只收发 | 阻塞调用丢业务线程池,避免线程雪崩 |
+
+## 项目进展
+
+- **2026-08-03(Phase 0 脚手架)**:Maven 多模块骨架、docker-compose 中间件、建库建表、README、提交规矩。
+- **进行中**:Phase 1 端到端骨架(连接+收发+存储)。
+
+## 文档
+
+- [docs/mvp-design.md](docs/mvp-design.md) — MVP 设计与实现方案(权威)
+
+## 提交规矩
+
+每次提交代码前,必须更新 `docs/` 与 `README.md` 记录项目进展(见 CLAUDE.md)。

@@ -1,0 +1,26 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: im-chat
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3307/im?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: root123456
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+rocketmq:
+  name-server: 127.0.0.1:9876
+  producer-group: im-chat-producer
+  topics:
+    upstream: im_upstream     # connect → chat(上行)
+    downstream: im_downstream # chat → connect(下行)

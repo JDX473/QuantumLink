@@ -1,0 +1,26 @@
+# target
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# Maven shade 中间产物
+dependency-reduced-pom.xml
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# 本地环境/敏感配置
+.env
+application-local.yml
