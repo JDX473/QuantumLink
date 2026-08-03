@@ -20,7 +20,7 @@ const loginView = $('#login-view');
 const mainView = $('#main-view');
 
 // 登录/注册 tab
-$('#login-tabs').addEventListener('click', (e) => {
+$('.login-tabs').addEventListener('click', (e) => {
   const tab = e.target.closest('.tab');
   if (!tab) return;
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
