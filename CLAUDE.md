@@ -28,7 +28,8 @@ QuantumLink:27 届秋招主项目,Java 后端深度 IM。从 0 写,目标是撑�
 - **心跳**:客户端 10s PING,服务端 IdleState 30s 兜底断连,Redis TTL=30s。
 - **MVP 范围**:单聊/单节点/无网关/无群聊/无多端/有 token 鉴权/必须有 RocketMQ。压测后置。
 - **架构**:im-common / im-connect(port 9999,Netty) / im-chat(port 8081,Spring Boot) / im-loadtest。connect 与 chat 零代码依赖,只经 MQ+Redis 通信。
-- 核心认知:**EventLoop 只做收发,阻塞调用丢业务线程池**(Java 17 无虚拟线程)。
+- **连接管理**:ChannelManager 用嵌套 Map(`userId → ConcurrentHashMap<deviceId, Channel>`),对应"用户→设备→连接"一对多;并发用 computeIfAbsent。跨节点路由靠 Redis SessionRegistry。
+- 核心认知:**EventLoop 只做收发,阻塞调用丢业务线程池**(Java 17 无虚拟线程)。Netty 出站写必须用 `channel.writeAndFlush`(ctx.write 会绕过末尾 encoder)。
 
 ## 常用命令
 
