@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:*">
+  <title>QuantumLink</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- 登录界面 -->
+<div id="login-view" class="view">
+  <div class="login-card">
+    <div class="brand">
+      <div class="brand-mark">
+        <span class="dot dot-a"></span><span class="dot dot-b"></span><span class="dot dot-c"></span>
+      </div>
+      <h1 class="brand-name">QuantumLink</h1>
+      <p class="brand-sub">自定义 TCP 协议 · 可靠投递 · 会话保序</p>
+    </div>
+
+    <div class="login-tabs">
+      <button class="tab active" data-tab="login">登录</button>
+      <button class="tab" data-tab="register">注册</button>
+    </div>
+
+    <form id="auth-form" class="auth-form">
+      <label class="field">
+        <span class="field-label">用户名</span>
+        <input id="username" class="input" type="text" placeholder="alice" autocomplete="username">
+      </label>
+      <label class="field">
+        <span class="field-label">密码</span>
+        <input id="password" class="input" type="password" placeholder="••••••••" autocomplete="current-password">
+      </label>
+      <button id="auth-submit" class="btn btn-primary" type="submit">连接</button>
+      <p id="auth-error" class="auth-error"></p>
+    </form>
+  </div>
+</div>
+
+<!-- 主聊天界面 -->
+<div id="main-view" class="view hidden">
+  <!-- 顶部链路状态条 -->
+  <header class="link-bar">
+    <div class="link-status">
+      <span id="link-light" class="light"></span>
+      <span id="link-text" class="link-text">未连接</span>
+    </div>
+    <div class="link-meta">
+      <span id="link-user" class="mono"></span>
+      <span id="link-uptime" class="mono muted"></span>
+      <button id="btn-logout" class="btn btn-ghost btn-sm">断开</button>
+    </div>
+  </header>
+
+  <div class="app-body">
+    <!-- 会话栏 -->
+    <aside class="conv-sidebar">
+      <div class="sidebar-head">
+        <span class="sidebar-title">会话</span>
+        <button id="btn-new-conv" class="btn btn-ghost btn-sm" title="新会话">＋</button>
+      </div>
+      <div id="conv-list" class="conv-list">
+        <div class="conv-empty">还没有会话</div>
+      </div>
+    </aside>
+
+    <!-- 消息区 -->
+    <section class="chat-area">
+      <div id="conv-title" class="conv-title muted">选择一个会话开始聊天</div>
+      <div id="message-stream" class="message-stream"></div>
+      <div class="composer">
+        <textarea id="composer-input" class="input composer-input" rows="1" placeholder="输入消息, Enter 发送"></textarea>
+        <button id="btn-send" class="btn btn-send" disabled>发送</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- 新会话弹窗 -->
+<div id="new-conv-modal" class="modal hidden">
+  <div class="modal-card">
+    <h3 class="modal-title">发起新会话</h3>
+    <input id="new-conv-username" class="input" type="text" placeholder="输入对方用户名,如 alice">
+    <p id="new-conv-error" class="auth-error"></p>
+    <div class="modal-actions">
+      <button id="btn-new-conv-cancel" class="btn btn-ghost">取消</button>
+      <button id="btn-new-conv-ok" class="btn btn-primary">开始聊天</button>
+    </div>
+  </div>
+</div>
+
+<script src="renderer.js"></script>
+</body>
+</html>

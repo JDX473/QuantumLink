@@ -1,0 +1,12 @@
+{
+  "name": "quantumlink-desktop",
+  "version": "1.0.0",
+  "description": "QuantumLink IM 桌面客户端(Electron)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^31.0.0"
+  }
+}

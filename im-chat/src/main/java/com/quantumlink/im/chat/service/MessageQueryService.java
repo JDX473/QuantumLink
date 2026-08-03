@@ -1,15 +1,22 @@
 package com.quantumlink.im.chat.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.quantumlink.im.chat.dto.ConversationListDto;
 import com.quantumlink.im.chat.dto.MessagePageDto;
 import com.quantumlink.im.chat.entity.Message;
+import com.quantumlink.im.chat.entity.User;
 import com.quantumlink.im.chat.mapper.MessageMapper;
+import com.quantumlink.im.chat.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 消息查询服务:离线消息 + 增量拉取。
@@ -26,6 +33,7 @@ import java.util.List;
 public class MessageQueryService {
 
     private final MessageMapper messageMapper;
+    private final UserMapper userMapper;
 
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 200;
@@ -81,5 +89,63 @@ public class MessageQueryService {
                         .orderByDesc(Message::getSeq)
                         .last("LIMIT 1"));
         return last == null ? 0 : last.getSeq();
+    }
+
+    /**
+     * 会话列表:该用户参与的所有会话,按最后一条消息时间倒序。
+     * 每条含对方 userId/用户名、最后一条消息预览、最后时间。
+     */
+    public ConversationListDto listConversations(String userId) {
+        // 查该用户参与的所有会话的消息(sender=我 或 receiver=我)
+        List<Message> all = messageMapper.selectList(
+                new LambdaQueryWrapper<Message>()
+                        .eq(Message::getSenderId, userId)
+                        .or()
+                        .eq(Message::getReceiverId, userId));
+
+        // 按 conversationId 分组,每组取最后一条消息(按 seq 最大)
+        Map<String, Message> lastByConv = new LinkedHashMap<>();
+        for (Message m : all) {
+            Message prev = lastByConv.get(m.getConversationId());
+            if (prev == null || m.getSeq() > prev.getSeq()) {
+                lastByConv.put(m.getConversationId(), m);
+            }
+        }
+
+        // 解析对方 userId → username
+        Set<String> peerIds = new HashSet<>();
+        for (Message m : lastByConv.values()) {
+            String peer = m.getSenderId().equals(userId) ? m.getReceiverId() : m.getSenderId();
+            peerIds.add(peer);
+        }
+        Map<String, String> idToName = new java.util.HashMap<>();
+        if (!peerIds.isEmpty()) {
+            List<User> peers = userMapper.selectList(
+                    new LambdaQueryWrapper<User>().in(User::getUserId, peerIds));
+            for (User u : peers) {
+                idToName.put(u.getUserId(), u.getUsername());
+            }
+        }
+
+        List<ConversationListDto.ConversationItem> items = new ArrayList<>();
+        for (Message m : lastByConv.values()) {
+            String peer = m.getSenderId().equals(userId) ? m.getReceiverId() : m.getSenderId();
+            ConversationListDto.ConversationItem item = new ConversationListDto.ConversationItem();
+            item.setConversationId(m.getConversationId());
+            item.setPeerUserId(peer);
+            item.setPeerUsername(idToName.getOrDefault(peer, peer));
+            item.setLastMessage(m.getContent());
+            item.setLastTime(m.getServerTime());
+            item.setLastSeq(m.getSeq());
+            items.add(item);
+        }
+
+        // 按最后时间倒序(最近对话靠上)
+        items.sort((a, b) -> Long.compare(b.getLastTime() == null ? 0 : b.getLastTime(),
+                                          a.getLastTime() == null ? 0 : a.getLastTime()));
+
+        ConversationListDto dto = new ConversationListDto();
+        dto.setConversations(items);
+        return dto;
     }
 }

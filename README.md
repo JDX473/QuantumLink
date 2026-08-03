@@ -31,6 +31,7 @@ im-connect → 目标客户端
 | im-gateway | 88 | 入口代理(负载均衡+Nacos 路由) | MVP 后置 |
 | im-chat | 8081 | 业务层:注册登录/幂等/落库/seq/离线拉取/双ACK | ✅ 端到端打通 |
 | im-loadtest | — | 压测客户端 | MVP 后置 |
+| im-desktop(客户端) | — | Electron 桌面端(TCP 走主进程,UI 走渲染进程) | ✅ 窗口+登录+收发 |
 
 ## 技术栈
 
@@ -89,6 +90,9 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - **2026-08-03(DELIVER 回执:双 ACK 闭环)**:可靠投递第二跳——接收方 B 收到消息自动回 DELIVER_ACK(新增 FrameType.DELIVER_ACK),connect 转发到 `deliver_ack` topic,chat 更新消息状态 SENT→DELIVERED 并回 DELIVER 给 A。**双 ACK 完整**:A 看到"已存储"(STORE)+"对方已送达"(DELIVER)。验证:DB 状态更新为 DELIVERED。修复 Node 端缺 DELIVER_ACK 帧类型定义。
 - **2026-08-03(登录注册)**:真实注册登录流程替代手动塞 token——`POST /api/auth/register`(校验用户名唯一)+ `POST /api/auth/login`(密码 SHA-256+salt 校验 → 生成 token + 分配 device_id → 存 Redis `im:token:` → 落 device 表),返回 `{token, deviceId, userId}`。**验证**:注册/登录/握手/互通全流程通过,device_id 与 user_id 服务端分配。
 - **2026-08-03(合并到 master)**:dev 分支验证通过的全部功能(可靠投递闭环 + 登录注册)合并到 `master`。之后新功能仍在 `dev` 开发,验证后 merge。
+- **2026-08-03(Electron 桌面端)**:新增 `clients/desktop/`——Electron 桌面客户端。TCP 连接在主进程(复用 client-core.js),UI 走渲染进程(IPC + preload)。**报文式消息 UI**:每条消息带元数据头(发送者/seq/时间)+ 送达状态灯(发送中/已存储/对方已送达),深色信号主题(信号青+量子紫)。含登录/注册界面、会话栏、实时链路状态条。**启动**:`cd clients/desktop && npm install && npm start`。
+- **2026-08-04(用户名→userId 解析)**:聊天填用户名(可变、好记)自动解析成 userId(不变、服务端分配的身份锚点)再发送。新增 `GET /api/users/resolve?username=` 接口;桌面端发送前先解析。**设计**:userId 是稳定身份,username 可变——用户改名不影响历史消息/会话/设备。修复:桌面端发送时 IPC 返回 Promise 需用 `.then` 拿 clientMsgId,否则 ACK 匹配不到、状态一直"发送中"。
+- **2026-08-04(会话列表 UI 重构)**:聊天交互对齐微信/Discord——左侧会话列表(对方用户名+最后消息+时间,点击选中)+ 右侧消息流 + 输入框直接发(无需填接收方);新会话用＋弹窗输入用户名解析建会话。chat 新增 `GET /api/conversations?userId=` 会话列表接口(按消息聚合+解析对方用户名)。**验证**:会话列表接口返回正确(含 peerUsername/lastMessage/时间)。
 
 ## 分支
 
