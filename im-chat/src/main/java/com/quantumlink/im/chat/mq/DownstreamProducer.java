@@ -49,19 +49,19 @@ public class DownstreamProducer {
     }
 
     /**
-     * 发送下行消息(统一信封)。
+     * 发送下行消息(统一信封:{type, to, data})。
      *
      * @param targetUserId  推给哪个用户
      * @param targetDeviceId 目标设备,null = 多端全推
      * @param contentType    DownstreamEnvelope.TYPE_ACK / TYPE_MSG
-     * @param body           AckPayload 或 MessagePayload
+     * @param data           AckPayload 或 MessagePayload 对象(connect 不解析其内部)
      */
-    public void sendEnvelope(String targetUserId, String targetDeviceId, String contentType, Object body) {
+    public void sendEnvelope(String targetUserId, String targetDeviceId, String contentType, Object data) {
         DownstreamEnvelope envelope = new DownstreamEnvelope();
-        envelope.setTargetUserId(targetUserId);
-        envelope.setTargetDeviceId(targetDeviceId);
-        envelope.setContentType(contentType);
-        envelope.setBodyJson(JsonUtil.toJson(body));
+        envelope.setTo(targetUserId);
+        envelope.setDeviceId(targetDeviceId);
+        envelope.setType(contentType);
+        envelope.setData(data);
         send(JsonUtil.toJson(envelope));
     }
 

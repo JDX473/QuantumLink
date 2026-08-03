@@ -64,32 +64,32 @@ public class DownstreamConsumer {
     private void handle(MessageExt msg) {
         String json = new String(msg.getBody(), StandardCharsets.UTF_8);
         DownstreamEnvelope envelope = JsonUtil.fromJson(json, DownstreamEnvelope.class);
-        if (envelope == null || envelope.getTargetUserId() == null) {
+        if (envelope == null || envelope.getTo() == null) {
             log.warn("bad downstream envelope, skip");
             return;
         }
 
         // 定位目标连接
         Collection<Channel> channels;
-        if (envelope.getTargetDeviceId() != null) {
-            Channel ch = ChannelManager.get(envelope.getTargetUserId(), envelope.getTargetDeviceId());
+        if (envelope.getDeviceId() != null) {
+            Channel ch = ChannelManager.get(envelope.getTo(), envelope.getDeviceId());
             channels = ch == null ? java.util.Collections.emptyList() : java.util.Collections.singletonList(ch);
         } else {
-            channels = ChannelManager.getAll(envelope.getTargetUserId());
+            channels = ChannelManager.getAll(envelope.getTo());
         }
 
         if (channels.isEmpty()) {
             // 接收方离线:消息已落库,上线走增量拉取(Phase 2)。这里不推送。
-            log.info("target offline, skip push: user={} type={}", envelope.getTargetUserId(), envelope.getContentType());
+            log.info("target offline, skip push: user={} type={}", envelope.getTo(), envelope.getType());
             return;
         }
 
         // 按类型包装成客户端帧,推给每个目标 channel
-        FrameType frameType = switch (envelope.getContentType()) {
+        FrameType frameType = switch (envelope.getType()) {
             case DownstreamEnvelope.TYPE_ACK -> FrameType.MSG_ACK;
             case DownstreamEnvelope.TYPE_MSG -> FrameType.MSG;
             default -> {
-                log.warn("unknown contentType: {}", envelope.getContentType());
+                log.warn("unknown type: {}", envelope.getType());
                 yield null;
             }
         };
@@ -97,6 +97,8 @@ public class DownstreamConsumer {
             return;
         }
 
+        // data 是反序列化后的对象(AckPayload/MessagePayload),序列化后作为客户端帧 body
+        String dataJson = JsonUtil.toJson(envelope.getData());
         for (Channel channel : channels) {
             if (!channel.isActive()) {
                 continue;
@@ -104,13 +106,13 @@ public class DownstreamConsumer {
             // 写 Channel 必须在 eventLoop 线程,保证线程安全
             channel.eventLoop().execute(() -> {
                 try {
-                    channel.writeAndFlush(ProtocolUtil.buildFrame(frameType, envelope.getBodyJson().getBytes(StandardCharsets.UTF_8)));
+                    channel.writeAndFlush(ProtocolUtil.buildFrame(frameType, dataJson.getBytes(StandardCharsets.UTF_8)));
                 } catch (Exception e) {
-                    log.error("push to channel failed: user={}", envelope.getTargetUserId(), e);
+                    log.error("push to channel failed: user={}", envelope.getTo(), e);
                 }
             });
         }
-        log.info("downstream pushed: user={} devices={} type={}", envelope.getTargetUserId(), channels.size(), envelope.getContentType());
+        log.info("downstream pushed: user={} devices={} type={}", envelope.getTo(), channels.size(), envelope.getType());
     }
 
     public void shutdown() {
