@@ -17,7 +17,9 @@ public enum FrameType {
     /** 心跳应答 */
     PONG((byte) 6),
     /** 错误 */
-    ERROR((byte) 7);
+    ERROR((byte) 7),
+    /** 已送达回执(接收方收到消息后回执给服务端) */
+    DELIVER_ACK((byte) 8);
 
     private final byte code;
 

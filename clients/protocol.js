@@ -21,6 +21,7 @@ const FrameType = {
   PING: 5,
   PONG: 6,
   ERROR: 7,
+  DELIVER_ACK: 8,
 };
 
 function crc32(buf) {

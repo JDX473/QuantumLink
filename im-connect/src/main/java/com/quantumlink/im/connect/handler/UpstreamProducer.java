@@ -53,7 +53,15 @@ public class UpstreamProducer {
      * @return 是否发送成功
      */
     public boolean send(String json, String conversationId) {
-        Message msg = new Message("client2server", json.getBytes(StandardCharsets.UTF_8));
+        return sendToTopic("client2server", json, conversationId);
+    }
+
+    /**
+     * 同步发送到指定 topic,并按会话选同一队列。
+     * 用于 DELIVER_ACK 等需要 chat 单独消费的消息。
+     */
+    public boolean sendToTopic(String topic, String json, String conversationId) {
+        Message msg = new Message(topic, json.getBytes(StandardCharsets.UTF_8));
         try {
             SendResult result = producer.send(msg, new MessageQueueSelector() {
                 @Override
@@ -62,10 +70,10 @@ public class UpstreamProducer {
                     return mqs.get(index);
                 }
             }, conversationId, 3000);
-            log.debug("upstream sent: queue={} msgId={}", result.getMessageQueue().getQueueId(), result.getMsgId());
+            log.debug("sent topic={} queue={} msgId={}", topic, result.getMessageQueue().getQueueId(), result.getMsgId());
             return true;
         } catch (Exception e) {
-            log.error("send failed", e);
+            log.error("send failed topic={}", topic, e);
             return false;
         }
     }
