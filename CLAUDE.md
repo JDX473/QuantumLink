@@ -7,9 +7,11 @@ QuantumLink:27 届秋招主项目,Java 后端深度 IM。从 0 写,目标是撑�
 - 用户:江东旭(27 届,北邮硕士,方向 Java 后端 + AI Agent)
 - 技术栈:Java 17、Maven、Netty、RocketMQ、Nacos、Redis、MySQL、Lettuce、MyBatis-Plus
 - 远程仓库:`git@github.com:JDX473/QuantumLink.git`
-- 当前阶段:设计共识(MVP 方案已定,待进入 Phase 0 脚手架)
+- **分支工作流**:新功能在 `dev` 分支开发 → 验证通过后 merge 到 `main`。当前在 `dev`,开发 Phase 2 可靠投递。
 
-## 硬性提交规矩(必须遵守)
+## 分支与提交规矩(必须遵守)
+
+**新功能一律在 `dev` 分支开发,验证通过后 merge 到 `main`。**
 
 **每次提交代码前,必须先更新文档和 README,记录本次项目进展。** 具体:
 
@@ -17,6 +19,7 @@ QuantumLink:27 届秋招主项目,Java 后端深度 IM。从 0 写,目标是撑�
 2. **commit message 自解释**:写清"为什么/做了什么",不写空泛的 "update"。
 3. **文档随代码同一 commit**:两者进同一个 commit,保证历史可追溯。
 4. 每完成一个阶段/里程碑,在 README 的"项目进展"部分追加记录。
+5. 开发分支 dev 上提交时,推送 `git push origin dev`;阶段验证通过后 merge 到 main:`git checkout main && git merge dev && git push`。
 
 ## 设计决策记录(实现时遵守)
 
