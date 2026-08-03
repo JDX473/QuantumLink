@@ -91,6 +91,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - **2026-08-03(登录注册)**:真实注册登录流程替代手动塞 token——`POST /api/auth/register`(校验用户名唯一)+ `POST /api/auth/login`(密码 SHA-256+salt 校验 → 生成 token + 分配 device_id → 存 Redis `im:token:` → 落 device 表),返回 `{token, deviceId, userId}`。**验证**:注册/登录/握手/互通全流程通过,device_id 与 user_id 服务端分配。
 - **2026-08-03(合并到 master)**:dev 分支验证通过的全部功能(可靠投递闭环 + 登录注册)合并到 `master`。之后新功能仍在 `dev` 开发,验证后 merge。
 - **2026-08-03(Electron 桌面端)**:新增 `clients/desktop/`——Electron 桌面客户端。TCP 连接在主进程(复用 client-core.js),UI 走渲染进程(IPC + preload)。**报文式消息 UI**:每条消息带元数据头(发送者/seq/时间)+ 送达状态灯(发送中/已存储/对方已送达),深色信号主题(信号青+量子紫)。含登录/注册界面、会话栏、实时链路状态条。**启动**:`cd clients/desktop && npm install && npm start`。
+- **2026-08-04(用户名→userId 解析)**:聊天填用户名(可变、好记)自动解析成 userId(不变、服务端分配的身份锚点)再发送。新增 `GET /api/users/resolve?username=` 接口;桌面端发送前先解析。**设计**:userId 是稳定身份,username 可变——用户改名不影响历史消息/会话/设备。修复:桌面端发送时 IPC 返回 Promise 需用 `.then` 拿 clientMsgId,否则 ACK 匹配不到、状态一直"发送中"。
 
 ## 分支
 

@@ -196,27 +196,40 @@ function findMessageByMsgId(msgId) {
 }
 
 // ---- 发送 ----
-function send() {
+async function send() {
   const receiver = $('#composer-receiver').value.trim();
   const content = $('#composer-input').value;
   if (!receiver || !content) return;
 
-  const conv = conversationId(currentUser, receiver);
+  // 用户填的是用户名(可变),解析成 userId(不可变身份锚点)再发
+  let receiverId;
+  try {
+    const resolved = await api.resolveUser({ username: receiver });
+    if (!resolved.success) {
+      // 可能本身就是 userId,直接试
+      receiverId = receiver;
+    } else {
+      receiverId = resolved.userId;
+    }
+  } catch (e) {
+    // 解析失败,直接用输入值(可能是 userId)
+    receiverId = receiver;
+  }
+
+  const conv = conversationId(currentUser, receiverId);
   if (!currentConv || currentConv !== conv) {
     currentConv = conv;
-    $('#conv-title').textContent = '会话 · ' + conv;
+    $('#conv-title').textContent = '会话 · ' + receiver + ' (' + receiverId + ')';
   }
 
   // 本地乐观渲染
-  const msg = { senderId: currentUser, receiverId: receiver, content, clientTime: Date.now() };
+  const msg = { senderId: currentUser, receiverId, content, clientTime: Date.now() };
   const el = renderMessage(msg, 'sending');
 
-  try {
-    const cmid = api.send({ receiverId: receiver, content, msgType: 'TEXT' });
-    el.dataset.clientMsgId = cmid;
-  } catch (e) {
-    updateMessageStatus(el, 'failed');
-  }
+  // api.send 是 IPC(异步),返回 Promise;用 then 拿真实 clientMsgId 才能匹配 ACK
+  api.send({ receiverId, content, msgType: 'TEXT' })
+    .then((cmid) => { if (cmid) el.dataset.clientMsgId = cmid; })
+    .catch(() => updateMessageStatus(el, 'failed'));
 
   $('#composer-input').value = '';
   $('#btn-send').disabled = true;

@@ -70,6 +70,14 @@ ipcMain.handle('auth:register', async (_e, { username, password }) => {
   return data;
 });
 
+/** 用户名 → userId 解析(聊天时填用户名,解析成 userId 再发) */
+ipcMain.handle('users:resolve', async (_e, { username }) => {
+  const res = await fetch(`http://127.0.0.1:8081/api/users/resolve?username=${encodeURIComponent(username)}`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || 'resolve failed');
+  return data;
+});
+
 /** 建立长连接(握手) */
 ipcMain.handle('connect:start', async (_e, { token, deviceId }) => {
   if (client) { client.close(); client = null; }

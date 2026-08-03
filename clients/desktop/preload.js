@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld('quantumlink', {
   login: (creds) => ipcRenderer.invoke('auth:login', creds),
   register: (creds) => ipcRenderer.invoke('auth:register', creds),
 
+  // 用户解析(用户名 → userId)
+  resolveUser: (info) => ipcRenderer.invoke('users:resolve', info),
+
   // 连接
   connect: (info) => ipcRenderer.invoke('connect:start', info),
   close: () => ipcRenderer.invoke('connect:close'),
