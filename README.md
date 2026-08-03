@@ -39,11 +39,11 @@ Java 17 · Maven · Netty 4.1 · RocketMQ 5 · Redis 7 · MySQL 8 · Spring Boot
 ## 快速开始
 
 ```bash
-# 1. 启动中间件(Docker)
-docker compose -f docker/docker-compose.yml up -d
+# 1. 启动本机中间件(RocketMQ + Redis;MySQL 假设已作为 Windows 服务运行)
+scripts/start-middleware.cmd
 
-# 2. 构建
-mvn clean package -DskipTests
+# 2. 构建(本机默认 JDK8,需用 JDK17)
+JAVA_HOME="D:\\jdk17" mvn clean package -DskipTests
 
 # 3. 启动业务层
 java -jar im-chat/target/im-chat-1.0.0-SNAPSHOT.jar
@@ -65,7 +65,7 @@ java -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
 
 ## 项目进展
 
-- **2026-08-03(Phase 0 脚手架)**:Maven 多模块骨架、docker-compose 中间件、建库建表、README、提交规矩。
+- **2026-08-03(Phase 0 脚手架)**:Maven 多模块骨架、本机中间件启动脚本、建库建表、README、提交规矩。
 - **进行中**:Phase 1 端到端骨架(连接+收发+存储)。
 
 ## 文档

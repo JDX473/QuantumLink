@@ -33,15 +33,22 @@ QuantumLink:27 届秋招主项目,Java 后端深度 IM。从 0 写,目标是撑�
 ## 常用命令
 
 ```bash
-# 构建
-mvn -q clean package -DskipTests
+# 构建(用 JDK 17,D:\jdk17)
+JAVA_HOME="D:\\jdk17" mvn clean package -DskipTests
 
-# 中间件(Docker)
-docker compose -f docker/docker-compose.yml up -d
+# 启动本机中间件(RocketMQ + Redis,MySQL 假设已作为服务运行)
+scripts/start-middleware.cmd
 
 # 测试
 mvn test
 ```
+
+## 本机中间件(不用 Docker,用户本地已装)
+
+- MySQL 8: `127.0.0.1:3306`, root/123456, 库 `im`
+- Redis: `F:\Study\Redis4`(redis-server.exe, 127.0.0.1:6379, 无密码)
+- RocketMQ 5.3.1: `F:\Study\RocketMQ\rocketmq-all-5.3.1-bin-release`(namesrv 9876 / broker 10911, 本机直接跑 .cmd)
+- 构建需 JDK 17(`D:\jdk17`), 本机默认 JAVA_HOME 是 JDK8
 
 ## 权威规格
 

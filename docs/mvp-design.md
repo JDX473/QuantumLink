@@ -37,7 +37,7 @@
 ```
 E:\QIUZHAO\IM
 ├── pom.xml                   父 POM:BOM 统一版本
-├── docker/docker-compose.yml 中间件编排
+├── scripts/               本机中间件启动脚本(start-middleware.cmd)
 ├── sql/schema.sql            建库建表
 ├── docs/                     ← 本文档 + 面试话术
 ├── im-common                WS 协议信封、DTO、工具(纯 Java)
@@ -321,7 +321,7 @@ im_message(
 
 ## 10. 分阶段落地(先骨架后深化)
 
-- **Phase 0 脚手架**(0.5 天):git init + 根 POM 5 模块 + docker-compose + schema + README + **CLAUDE.md(提交规矩)**
+- **Phase 0 脚手架**(0.5 天):git init + 根 POM 5 模块 + 本机中间件启动脚本 + schema + README + **CLAUDE.md(提交规矩)**
 - **Phase 1 端到端骨架**(3-4 天):im-common(TCP 协议)+ im-connect(握手鉴权+心跳+异步化)+ im-chat(落库+seq)+ 简单客户端;双客户端互通
 - **Phase 2 可靠投递深化**(3-4 天):幂等 + 双 ACK + 重传 + seq + 离线拉取(本设计文档即该阶段蓝本)
 - **Phase 3 压测调优 + 文档**(后置):im-loadtest + 报告 + 面试话术
