@@ -125,7 +125,7 @@ public class MessageService {
         return cmp <= 0 ? a + "#" + b : b + "#" + a;
     }
 
-    /** 确保会话存在,并取最新 last_seq(事务内)。 */
+    /** 确保会话存在,并原子分配新 seq(事务内)。 */
     private Conversation ensureConversation(String conversationId) {
         Conversation conv = conversationMapper.selectOne(
                 new LambdaQueryWrapper<Conversation>()
@@ -136,14 +136,13 @@ public class MessageService {
             conv.setLastSeq(0L);
             conv.setLastMsgTime(LocalDateTime.now());
             conversationMapper.insert(conv);
-            // 重新取(自增后)
-            conv = conversationMapper.selectOne(
-                    new LambdaQueryWrapper<Conversation>()
-                            .eq(Conversation::getConversationId, conversationId));
         }
-        // 事务内自增 last_seq,行锁保证同一会话串行
-        conversationMapper.incrementLastSeq(conversationId);
-        conv.setLastSeq(conv.getLastSeq() + 1);
+        // FOR UPDATE 锁行 → 读最新 last_seq → +1 分配新 seq → 写回
+        // 同一会话的并发消息在此串行,保证 seq 单调不重复
+        Conversation locked = conversationMapper.selectForUpdate(conversationId);
+        long newSeq = locked.getLastSeq() + 1;
+        conversationMapper.updateLastSeq(conversationId, newSeq);
+        conv.setLastSeq(newSeq);
         return conv;
     }
 
@@ -154,10 +153,11 @@ public class MessageService {
                         .eq(Message::getClientMsgId, clientMsgId));
     }
 
-    /** 回 ACK-STORE:携带 server_msg_id + seq,经下行 MQ 给发送方(统一信封) */
+    /** 回 ACK-STORE:携带 client_msg_id + server_msg_id + seq,经下行 MQ 给发送方(统一信封) */
     private void sendStoreAck(MessagePayload payload, Long serverMsgId, Long seq) {
         AckPayload ack = new AckPayload();
         ack.setAckType(AckType.STORE);
+        ack.setClientMsgId(payload.getClientMsgId());
         ack.setServerMsgId(serverMsgId);
         ack.setSeq(seq);
         ack.setReceiverId(payload.getReceiverId());

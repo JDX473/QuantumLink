@@ -27,6 +27,8 @@ QuantumLink:27 届秋招主项目,Java 后端深度 IM。从 0 写,目标是撑�
 - **身份体系(服务端分配为主)**:user_id(注册分配)、device_id(首次登录分配,区分客户端/多端基础)、server_msg_id(落库生成,消息正式身份)。幂等键 client_msg_id 客户端生成(`device_id+自增`),去重键 = sender_id+client_msg_id。下行带 server_msg_id+seq,不带 client_msg_id。
 - **有序 seq**:服务端落库同一事务内 `UPDATE im_conversation SET last_seq=last_seq+1` 分配;不用 Redis INCR。
 - **可靠投递**:双 ACK(STORE=已落库 / DELIVER=对方已送达),发送方超时同一 client_msg_id 重传(3s 超时、指数退避、上限 6 次)。
+- **客户端发送确认机**:pending 表 + 超时重传 + 断线感知(重连后 flush pending)。client_msg_id 必须**每次会话唯一**(deviceId + 会话随机前缀 + 自增),防客户端重启回绕撞 TTL 内旧 key。ACK 必须回带 client_msg_id,客户端才能精确匹配。
+- **seq 分配(踩坑)**:`UPDATE last_seq=last_seq+1` 拿不到新值 → 必须 `SELECT ... FOR UPDATE` 锁行读最新值再写回,保证 seq 单调不重复。
 - **缓存**:先 MySQL 后 Redis,消息 append-only 不双删,客户端 seq 补拉自愈。
 - **心跳**:客户端 10s PING,服务端 IdleState 30s 兜底断连,Redis TTL=30s。
 - **MVP 范围**:单聊/单节点/无网关/无群聊/无多端/有 token 鉴权/必须有 RocketMQ。压测后置。

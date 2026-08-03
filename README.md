@@ -73,6 +73,7 @@ java -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
 - **2026-08-03(独立数据库)**:新建独立库 `quantumlink`(与旧项目 `im` 库隔离),只含本项目的 4 张表;schema.sql 与 application.yml 已切换,消息落库验证通过。
 - **2026-08-03(Phase 1.5 下行推送)**:链路闭合——connect 新增 DownstreamConsumer 消费 server2client,统一下行信封 DownstreamEnvelope(ACK/MSG),多端全推;修复握手漏注册本地 Channel、下行缺 seq 两个 bug。**双向互聊验证通过**:A 发→B 收(带 seq)+ A 收 ACK-STORE。
 - **2026-08-03(下行信封重构)**:DownstreamEnvelope 从 `{targetUserId, contentType, bodyJson}` 重构为 **`{to, deviceId, type, data}`**——投递元数据与内容分离,data 用嵌套对象(非 JSON 字符串),避免双重转义;connect 只解析顶层,不懂业务内容。重构后链路验证通过。
+- **2026-08-03(Phase 2 可靠投递-客户端重传)**:ACK 加 clientMsgId(客户端精确匹配);客户端发送确认机——pending 表 + 3s 超时重传 + 指数退避(封顶48s/6次) + 断线感知(重连后 flush pending);修复 seq 分配 bug(FOR UPDATE 锁行)、客户端重启回绕(会话随机前缀)、握手误 flush、重连计数误重置。**验证**:断线重传、幂等重传、seq 递增、双向互聊全部通过。
 
 ## 文档
 

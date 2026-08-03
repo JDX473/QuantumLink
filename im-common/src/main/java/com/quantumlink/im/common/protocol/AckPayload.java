@@ -15,6 +15,9 @@ public class AckPayload {
     /** 回执类型: STORE / DELIVER */
     private AckType ackType;
 
+    /** 客户端生成的幂等键——客户端用它匹配"这条 ACK 对应我发的哪条消息" */
+    private String clientMsgId;
+
     /** 引用哪条消息(serverMsgId) */
     private Long serverMsgId;
 
