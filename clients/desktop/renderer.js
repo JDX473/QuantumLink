@@ -12,6 +12,8 @@ const api = window.quantumlink;
 
 // ---- 状态 ----
 let currentUser = null;        // 当前登录的 userId
+let currentUsername = null;    // 当前登录的用户名
+let currentAvatar = null;      // 当前登录的头像 URL
 let currentConv = null;        // 当前会话 conversationId
 let convMessages = new Map();  // conversationId → { messages: [] }
 
@@ -69,11 +71,14 @@ $('#auth-form').addEventListener('submit', async (e) => {
 
     const login = await api.login({ username, password, deviceType: 'desktop' });
     currentUser = login.userId;
+    currentUsername = login.username || username;
+    currentAvatar = login.avatarUrl || null;
     await api.connect({ token: login.token, deviceId: login.deviceId });
 
     loginView.classList.add('hidden');
     mainView.classList.remove('hidden');
-    $('#link-user').textContent = username; // 显示用户名
+    $('#link-user').textContent = currentUsername; // 显示用户名
+    showMyAvatar();
     setLinkStatus('connecting', '连接中...');
 
     await loadConversations(); // 拉会话列表
@@ -93,6 +98,47 @@ function setLinkStatus(state, text) {
   if (state === 'connecting') light.classList.add('connecting');
   $('#link-text').textContent = text;
 }
+
+/** 显示自己的头像(顶部) */
+function showMyAvatar() {
+  const img = $('#me-avatar');
+  const fallback = $('#me-avatar-fallback');
+  if (currentAvatar) {
+    img.src = currentAvatar;
+    img.style.display = '';
+    fallback.style.display = 'none';
+  } else {
+    img.style.display = 'none';
+    fallback.style.display = 'inline-flex';
+    fallback.textContent = (currentUsername || '?')[0];
+  }
+}
+
+/** 点击自己的头像 → 选择文件修改头像 */
+$('#me-avatar').addEventListener('click', () => $('#me-avatar-file').click());
+$('#me-avatar-fallback').addEventListener('click', () => $('#me-avatar-file').click());
+$('#me-avatar-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file || !currentUser) return;
+  try {
+    const fileData = await fileToBase64(file);
+    const result = await api.updateAvatar({
+      userId: currentUser,
+      fileData, fileName: file.name, mimeType: file.type,
+    });
+    if (result && result.success) {
+      currentAvatar = result.avatarUrl;
+      showMyAvatar();
+      // 更新会话列表里自己的头像预览
+      loadConversations();
+    } else {
+      console.error('改头像失败:', result);
+    }
+  } catch (ex) {
+    console.error('改头像异常:', ex.message);
+  }
+  e.target.value = ''; // 允许重新选同一文件
+});
 
 api.onConnectionStatus(({ status, userId }) => {
   if (status === 'connected') setLinkStatus('on', '已连接');

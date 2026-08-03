@@ -141,6 +141,14 @@ html, body {
 @keyframes pulse { 50% { opacity: 0.4; } }
 .link-text { font-size: 12px; color: var(--muted); font-weight: 500; }
 .link-meta { display: flex; align-items: center; gap: 14px; }
+.me-wrap { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.me-wrap:hover .me-avatar { opacity: 0.85; }
+.me-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; transition: opacity 0.15s; }
+.me-avatar-placeholder {
+  background: var(--signal); color: var(--ink);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+}
 
 .app-body { flex: 1; display: flex; min-height: 0; }
 

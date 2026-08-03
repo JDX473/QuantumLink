@@ -52,9 +52,14 @@
       <span id="link-text" class="link-text">未连接</span>
     </div>
     <div class="link-meta">
-      <span id="link-user" class="mono"></span>
+      <div class="me-wrap" title="点击修改头像">
+        <img id="me-avatar" class="me-avatar" alt="我的头像" onerror="this.style.display='none'">
+        <span id="me-avatar-fallback" class="me-avatar me-avatar-placeholder">?</span>
+        <span id="link-user" class="mono"></span>
+      </div>
       <span id="link-uptime" class="mono muted"></span>
       <button id="btn-logout" class="btn btn-ghost btn-sm">断开</button>
+      <input id="me-avatar-file" type="file" accept="image/*" style="display:none">
     </div>
   </header>
 

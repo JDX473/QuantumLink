@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('quantumlink', {
 
   // 用户解析(用户名 → userId)
   resolveUser: (info) => ipcRenderer.invoke('users:resolve', info),
+  // 修改头像
+  updateAvatar: (info) => ipcRenderer.invoke('users:update-avatar', info),
 
   // 会话
   listConversations: (info) => ipcRenderer.invoke('convs:list', info),

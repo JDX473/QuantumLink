@@ -97,6 +97,22 @@ ipcMain.handle('users:resolve', async (_e, { username }) => {
   return data;
 });
 
+/** 修改头像(multipart 上传) */
+ipcMain.handle('users:update-avatar', async (_e, { userId, fileData, fileName, mimeType }) => {
+  const fd = new FormData();
+  const buf = Buffer.from(fileData, 'base64');
+  const blob = new Blob([buf], { type: mimeType || 'image/png' });
+  fd.append('file', blob, fileName || 'avatar.png');
+
+  const res = await fetch(`http://127.0.0.1:8081/api/users/${encodeURIComponent(userId)}/avatar`, {
+    method: 'POST',
+    body: fd,
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || 'upload failed');
+  return data;
+});
+
 /** 会话列表 */
 ipcMain.handle('convs:list', async (_e, { userId }) => {
   const res = await fetch(`http://127.0.0.1:8081/api/conversations?userId=${encodeURIComponent(userId)}`);
