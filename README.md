@@ -27,9 +27,9 @@ im-connect → 目标客户端
 | 模块 | 端口 | 职责 | 状态 |
 |------|------|------|------|
 | im-common | — | 自定义 TCP 协议帧、DTO、工具 | ✅ 协议编解码+测试通过 |
-| im-connect | 9999 | Netty 长连接层:握手鉴权/心跳/上行 | 骨架 |
+| im-connect | 9999 | Netty 长连接层:握手鉴权/心跳/上行 | ✅ 端到端打通 |
 | im-gateway | 88 | 入口代理(负载均衡+Nacos 路由) | MVP 后置 |
-| im-chat | 8081 | 业务层:鉴权/持久化/seq/离线/回执 | 骨架 |
+| im-chat | 8081 | 业务层:鉴权/持久化/seq/离线/回执 | ✅ 端到端打通 |
 | im-loadtest | — | 压测客户端 | MVP 后置 |
 
 ## 技术栈
@@ -67,6 +67,8 @@ java -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
 
 - **2026-08-03(Phase 0 脚手架)**:Maven 多模块骨架、本机中间件启动脚本、建库建表、README、提交规矩。
 - **2026-08-03(Phase 1 协议层)**:im-common 自定义 TCP 协议完成——帧编解码器(ImFrameEncoder/Decoder)、CRC32 校验、payload 类型(握手/消息/回执/错误)、粘包拆包与半包单测(3 个测试全过)。
+- **2026-08-03(Phase 1 连接层)**:im-connect 长连接层完成——Netty TCP 服务器、握手鉴权(token 查 Redis)、心跳(PING/PONG + Redis 续期)、EventLoop 异步化(业务线程池)、会话注册、上行 RocketMQ。修复关键 bug:`ctx.writeAndFlush` 会绕过末尾 encoder,须用 `channel.writeAndFlush`。
+- **2026-08-03(Phase 1 业务层)**:im-chat 业务层完成——消费 client2server、幂等(SETNX + DB 唯一索引)、落库 + 事务内分配 seq、回 ACK-STORE、下行 server2client。**端到端链路打通**:客户端→connect→MQ→chat→MySQL 落库→ACK,幂等去重验证通过。
 
 ## 文档
 

@@ -1,0 +1,86 @@
+package com.quantumlink.im.connect.service;
+
+import com.quantumlink.im.connect.config.ConnectConfig;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisURI;
+import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.api.sync.RedisCommands;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.Duration;
+
+/**
+ * Redis 会话注册表。
+ *
+ * <p>职责:维护"每个设备 → 连接所在节点"的映射,供握手鉴权、心跳续期、
+ * 以及(后续集群阶段)消息路由定位目标节点。
+ *
+ * <p>Key 设计:{@code im:session:{userId}:{deviceId}} → 节点 ID
+ * <ul>
+ *   <li>每设备一个 key(MVP 虽单节点,但 key 带设备维度,为多端/多节点留扩展)</li>
+ *   <li>TTL = 30s,心跳续期 —— 断连但没清理时,TTL 兜底过期,防止"幽灵连接"</li>
+ * </ul>
+ *
+ * <p>为什么用 Lettuce:基于 Netty 单连接多路复用,无连接池,契合 connect 非阻塞模型。
+ */
+public class SessionRegistry {
+    private static final Logger log = LoggerFactory.getLogger(SessionRegistry.class);
+
+    private static final String SESSION_PREFIX = "im:session:";
+    private static final long TTL_SECONDS = 30;
+
+    private final RedisClient redisClient;
+    private final StatefulRedisConnection<String, String> connection;
+    private final RedisCommands<String, String> commands;
+
+    public SessionRegistry(ConnectConfig config) {
+        RedisURI uri = RedisURI.builder()
+                .withHost(config.redisHost)
+                .withPort(config.redisPort)
+                .withTimeout(Duration.ofSeconds(3))
+                .build();
+        this.redisClient = RedisClient.create(uri);
+        this.connection = redisClient.connect();
+        this.commands = connection.sync();
+    }
+
+    /** 会话 key */
+    private String key(String userId, String deviceId) {
+        return SESSION_PREFIX + userId + ":" + deviceId;
+    }
+
+    /** 注册会话(握手通过后调用),带 TTL */
+    public void register(String userId, String deviceId, String nodeId) {
+        commands.setex(key(userId, deviceId), TTL_SECONDS, nodeId);
+        log.info("session registered: user={} device={} node={}", userId, deviceId, nodeId);
+    }
+
+    /** 心跳续期(每 10s 心跳刷新 TTL) */
+    public void refresh(String userId, String deviceId) {
+        commands.expire(key(userId, deviceId), TTL_SECONDS);
+    }
+
+    /** 清理会话(断连时调用) */
+    public void remove(String userId, String deviceId) {
+        commands.del(key(userId, deviceId));
+    }
+
+    /** 查询用户某设备的节点 */
+    public String getNode(String userId, String deviceId) {
+        return commands.get(key(userId, deviceId));
+    }
+
+    /** 握手鉴权:校验 token 是否有效,返回 userId(null=无效) */
+    public String authenticate(String token) {
+        if (token == null || token.isEmpty()) {
+            return null;
+        }
+        return commands.get("im:token:" + token);
+    }
+
+    public void shutdown() {
+        connection.close();
+        redisClient.shutdown();
+    }
+}
