@@ -1,9 +1,21 @@
 /**
  * QuantumLink 客户端核心(Node)。
  *
- * 职责:建连、握手鉴权、心跳、收发消息、断线重连。
+ * 职责:建连、握手鉴权、心跳、收发消息、断线重连、**发送确认(可靠投递)**。
  * 设计上为多端扩展留接口 —— 不同端(desktop/web/mobile)只提供 device_type,
  * 核心逻辑复用同一份。
+ *
+ * ## 发送确认机(Phase 2 可靠投递核心)
+ *
+ * 每条待确认消息的状态机:
+ *   SENT →(收到 STORE)→ CONFIRMED(从 pending 移除)
+ *     └→(超时/断线)→ RESENDING(重传,次数+1,指数退避)
+ *          └→(≥6次)→ FAILED(回调 onSendFailed)
+ *
+ * 关键点:
+ * - 重传带**同一个 clientMsgId** → 服务端幂等去重,不重复落库
+ * - 断线时 pending 保留,重连成功后先 flush pending,再发新消息
+ * - 收到 ACK-STORE 用 clientMsgId 精确匹配(服务端已在 ACK 里回带)
  */
 const net = require('net');
 const { FrameType, encode, FrameDecoder } = require('./protocol');
@@ -13,16 +25,12 @@ const RECONNECT_BASE_MS = 1000;      // 重连基础间隔
 const RECONNECT_MAX_MS = 30000;      // 重连最大间隔
 const RECONNECT_MAX_ATTEMPTS = 6;
 
+// ---- 发送确认机参数 ----
+const RESEND_TIMEOUT_MS = 3000;      // 首超时:3s 未收 STORE 重传
+const RESEND_MAX_ATTEMPTS = 6;       // 最多重传次数
+const RESEND_BACKOFF_MAX_MS = 48000; // 退避封顶 48s
+
 class ImClient {
-  /**
-   * @param {Object} opts
-   * @param {string} opts.host 服务端地址
-   * @param {number} opts.port 服务端端口
-   * @param {string} opts.token 登录 token
-   * @param {string} opts.deviceId 设备 ID(服务端分配)
-   * @param {string} opts.deviceType 端类型: desktop / web / mobile
-   * @param {Object} opts.handlers { onConnected, onMessage, onAck, onError, onClosed }
-   */
   constructor(opts) {
     this.host = opts.host;
     this.port = opts.port;
@@ -39,14 +47,21 @@ class ImClient {
     this.intentionalClose = false;
     this.connected = false;
     this.authenticated = false;
+    this.everConnected = false; // 首次连接标志,用于区分"重连成功"和"首次连接"
+
+    // 发送确认:clientMsgId → pending 消息
+    this.pending = new Map();
+    this.clientSeq = 0; // 本地自增
+    // 会话随机前缀:防止客户端重启后 clientSeq 归零,生成的 clientMsgId 撞到 TTL 内的旧 key
+    this.sessionNonce = Math.floor(Math.random() * 0xFFFFFF).toString(16);
   }
 
-  /** 建立连接并触发握手 */
+  // ==================== 连接生命周期 ====================
+
   connect() {
     this.intentionalClose = false;
     this.socket = net.connect({ host: this.host, port: this.port }, () => {
       this.connected = true;
-      this.reconnectAttempts = 0;
       this._handshake();
     });
 
@@ -84,7 +99,6 @@ class ImClient {
         this._onAck(frame.body);
         break;
       case FrameType.PONG:
-        // 心跳应答,忽略
         break;
       case FrameType.ERROR:
         console.error('[client] server error:', frame.body);
@@ -101,6 +115,12 @@ class ImClient {
       console.log(`[client] 握手成功, userId=${body.userId}`);
       if (this.handlers.onConnected) this.handlers.onConnected(body.userId);
       this._startHeartbeat();
+      // 判断是否重连:首次连接(everConnected=false)后置 true;重连时 it's already true
+      if (this.everConnected) {
+        this._flushPending();
+        this.reconnectAttempts = 0; // 重连成功,重置退避计数
+      }
+      this.everConnected = true;
     } else {
       console.error(`[client] 握手失败: ${body.reason}`);
       this.close();
@@ -111,16 +131,105 @@ class ImClient {
     if (this.handlers.onMessage) this.handlers.onMessage(body);
   }
 
-  _onAck(body) {
-    if (this.handlers.onAck) this.handlers.onAck(body);
+  /** 收到 ACK-STORE:用 clientMsgId 匹配 pending,标记发送成功 */
+  _onAck(ack) {
+    if (ack && ack.ackType === 'STORE' && ack.clientMsgId) {
+      const item = this.pending.get(ack.clientMsgId);
+      if (item) {
+        this.pending.delete(ack.clientMsgId);
+        if (item.timer) clearTimeout(item.timer);
+        console.log(`[client] 消息确认: clientMsgId=${ack.clientMsgId} serverMsgId=${ack.serverMsgId} seq=${ack.seq}`);
+        if (this.handlers.onAck) this.handlers.onAck(ack);
+        return;
+      }
+      // pending 里没有 → 可能是重复 ACK,忽略
+    }
+    if (this.handlers.onAck) this.handlers.onAck(ack);
   }
 
-  /** 发送消息(业务层) */
+  // ==================== 发送确认机(可靠投递) ====================
+
+  /**
+   * 发送消息并登记 pending,启动超时重传。
+   * @param {Object} msg 消息内容(receiverId/content/msgType/...)
+   * @returns {string} clientMsgId
+   */
   sendMessage(msg) {
-    this.sendFrame(FrameType.MSG, msg);
+    // 生成幂等键:deviceId + 会话随机前缀 + 本地自增。
+    // 同一条逻辑消息重传不换号;重启后 clientSeq 归零也不会撞 TTL 内的旧 key
+    const clientMsgId = `${this.deviceId}-${this.sessionNonce}-${++this.clientSeq}`;
+    const full = { ...msg, clientMsgId };
+
+    // 登记 pending
+    const item = {
+      clientMsgId,
+      payload: full,
+      attempts: 0,
+      timer: null,
+    };
+    this.pending.set(clientMsgId, item);
+
+    this._sendWithRetry(item);
+    return clientMsgId;
   }
 
-  /** 发送原始帧 */
+  /** 发送一条 pending 消息(首次 or 重传),并安排下一次重传 */
+  _sendWithRetry(item) {
+    if (!this.connected) {
+      // 未连接:pending 保留,重连成功后 flush
+      console.log(`[client] 未连接,消息排队待发: ${item.clientMsgId}`);
+      return;
+    }
+    const ok = this.sendFrame(FrameType.MSG, item.payload);
+    if (ok) {
+      console.log(`[client] 发送(第${item.attempts + 1}次): ${item.clientMsgId}`);
+    }
+
+    // 安排重传定时器
+    if (item.timer) clearTimeout(item.timer);
+    const delay = this._backoffDelay(item.attempts);
+    item.timer = setTimeout(() => this._onResendTimeout(item), delay);
+  }
+
+  /** 定时器到:未收到 STORE → 重传(指数退避) */
+  _onResendTimeout(item) {
+    item.timer = null;
+
+    // 已被确认(重复 ACK 竞态)则不再重传
+    if (!this.pending.has(item.clientMsgId)) return;
+
+    item.attempts++;
+    if (item.attempts >= RESEND_MAX_ATTEMPTS) {
+      this.pending.delete(item.clientMsgId);
+      console.error(`[client] 发送失败(超过${RESEND_MAX_ATTEMPTS}次): ${item.clientMsgId}`);
+      if (this.handlers.onSendFailed) this.handlers.onSendFailed(item.payload);
+      return;
+    }
+    this._sendWithRetry(item);
+  }
+
+  /** 指数退避 + 抖动:3s→6s→12s→24s→48s→48s */
+  _backoffDelay(attempts) {
+    const base = RESEND_TIMEOUT_MS * Math.pow(2, attempts);
+    const capped = Math.min(base, RESEND_BACKOFF_MAX_MS);
+    // ±20% 抖动,防重传风暴(一批客户端同时超时同时重发)
+    const jitter = capped * 0.2 * (Math.random() * 2 - 1);
+    return Math.max(0, capped + jitter);
+  }
+
+  /** 重连成功后 flush pending:先重传积压消息(它们还没被确认) */
+  _flushPending() {
+    for (const item of this.pending.values()) {
+      item.attempts = 0; // 重置重试计数(新连接)
+      this._sendWithRetry(item);
+    }
+    if (this.pending.size > 0) {
+      console.log(`[client] 重连成功,重传 ${this.pending.size} 条待确认消息`);
+    }
+  }
+
+  // ==================== 心跳 / 重连 / 关闭 ====================
+
   sendFrame(type, body) {
     if (!this.socket || !this.connected) {
       console.error('[client] not connected');
@@ -144,13 +253,13 @@ class ImClient {
     }
   }
 
-  /** 断线 → 指数退避重连(带抖动,防重连风暴) */
   _onDisconnected() {
     this.connected = false;
     this.authenticated = false;
     this._stopHeartbeat();
     if (this.handlers.onClosed) this.handlers.onClosed();
 
+    // pending 保留不清空,重连成功后 flush
     if (this.intentionalClose) return;
 
     if (this.reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
@@ -161,14 +270,13 @@ class ImClient {
     const delay = Math.min(
       RECONNECT_BASE_MS * Math.pow(2, this.reconnectAttempts),
       RECONNECT_MAX_MS
-    ) + Math.random() * 1000; // 抖动 ±1s
+    ) + Math.random() * 1000;
     this.reconnectAttempts++;
     console.log(`[client] ${delay}ms 后第 ${this.reconnectAttempts} 次重连...`);
 
     this.reconnectTimer = setTimeout(() => this.connect(), delay);
   }
 
-  /** 主动关闭(不再重连) */
   close() {
     this.intentionalClose = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
@@ -177,4 +285,4 @@ class ImClient {
   }
 }
 
-module.exports = { ImClient, HEARTBEAT_INTERVAL_MS };
+module.exports = { ImClient, HEARTBEAT_INTERVAL_MS, RESEND_TIMEOUT_MS, RESEND_MAX_ATTEMPTS };

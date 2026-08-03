@@ -6,8 +6,9 @@ import com.quantumlink.im.common.util.JsonUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
-import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
-import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
+import org.apache.rocketmq.client.consumer.listener.ConsumeOrderlyContext;
+import org.apache.rocketmq.client.consumer.listener.ConsumeOrderlyStatus;
+import org.apache.rocketmq.client.consumer.listener.MessageListenerOrderly;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -15,14 +16,19 @@ import org.springframework.stereotype.Component;
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 /**
  * 上行消费者:消费 {@code client2server}(connect 生产的上行消息)。
  *
  * <p>消费逻辑:反序列化 MessagePayload → 交给 MessageService(幂等+落库+seq+回 ACK)。
  *
- * <p>MVP 用并发消费(MessageListenerConcurrently);Phase 2 做有序性时,
- * 同一会话的消息需同一队列串行消费(MessageListenerOrderly + 队列选择器)。
+ * <p><b>队列级串行消费(MessageListenerOrderly)—— 有序性关键</b>:
+ * connect 已按会话选同一队列,所以"同一队列"= "同一会话"。
+ * Orderly 保证同一队列的消息严格串行消费,不同队列(不同会话)并行。
+ * 配合 Redis INCR 取号,同一会话的 seq 分配顺序 = 消息发送顺序。
+ * 若用并发消费(MessageListenerConcurrently),同一会话的消息被多线程同时
+ * 处理,Redis INCR 的分配顺序就不再等于发送顺序 → 会话内乱序。
  */
 @Slf4j
 @Component
@@ -44,7 +50,8 @@ public class UpstreamConsumer {
             consumer = new DefaultMQPushConsumer("im-chat-consumer");
             consumer.setNamesrvAddr(namesrvAddr);
             consumer.subscribe(upstreamTopic, "*");
-            consumer.registerMessageListener((MessageListenerConcurrently) (msgs, context) -> {
+            consumer.registerMessageListener((MessageListenerOrderly) (msgs, context) -> {
+                // Orderly:同一队列(同一会话)的消息串行处理,天然保序
                 for (MessageExt msg : msgs) {
                     try {
                         String json = new String(msg.getBody(), StandardCharsets.UTF_8);
@@ -56,14 +63,14 @@ public class UpstreamConsumer {
                         messageService.handleUpstream(payload);
                     } catch (Exception e) {
                         log.error("handle upstream message error, will retry: msgId={}", msg.getMsgId(), e);
-                        // 返回 RECONSUME_LATER 让 MQ 重投(配合幂等去重,重复投递安全)
-                        return ConsumeConcurrentlyStatus.RECONSUME_LATER;
+                        // Orderly 重试:返回 SUSPEND_CURRENT_QUEUE_A_MOMENT 稍后重试当前队列
+                        return ConsumeOrderlyStatus.SUSPEND_CURRENT_QUEUE_A_MOMENT;
                     }
                 }
-                return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+                return ConsumeOrderlyStatus.SUCCESS;
             });
             consumer.start();
-            log.info("upstream consumer started: topic={}", upstreamTopic);
+            log.info("upstream consumer started (orderly): topic={}", upstreamTopic);
         } catch (Exception e) {
             throw new IllegalStateException("start upstream consumer failed", e);
         }

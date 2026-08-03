@@ -7,9 +7,11 @@ QuantumLink:27 届秋招主项目,Java 后端深度 IM。从 0 写,目标是撑�
 - 用户:江东旭(27 届,北邮硕士,方向 Java 后端 + AI Agent)
 - 技术栈:Java 17、Maven、Netty、RocketMQ、Nacos、Redis、MySQL、Lettuce、MyBatis-Plus
 - 远程仓库:`git@github.com:JDX473/QuantumLink.git`
-- 当前阶段:设计共识(MVP 方案已定,待进入 Phase 0 脚手架)
+- **分支工作流**:新功能在 `dev` 分支开发 → 验证通过后 merge 到 `main`。当前在 `dev`,开发 Phase 2 可靠投递。
 
-## 硬性提交规矩(必须遵守)
+## 分支与提交规矩(必须遵守)
+
+**新功能一律在 `dev` 分支开发,验证通过后 merge 到 `main`。**
 
 **每次提交代码前,必须先更新文档和 README,记录本次项目进展。** 具体:
 
@@ -17,6 +19,7 @@ QuantumLink:27 届秋招主项目,Java 后端深度 IM。从 0 写,目标是撑�
 2. **commit message 自解释**:写清"为什么/做了什么",不写空泛的 "update"。
 3. **文档随代码同一 commit**:两者进同一个 commit,保证历史可追溯。
 4. 每完成一个阶段/里程碑,在 README 的"项目进展"部分追加记录。
+5. 开发分支 dev 上提交时,推送 `git push origin dev`;阶段验证通过后 merge 到 main:`git checkout main && git merge dev && git push`。
 
 ## 设计决策记录(实现时遵守)
 
@@ -24,6 +27,8 @@ QuantumLink:27 届秋招主项目,Java 后端深度 IM。从 0 写,目标是撑�
 - **身份体系(服务端分配为主)**:user_id(注册分配)、device_id(首次登录分配,区分客户端/多端基础)、server_msg_id(落库生成,消息正式身份)。幂等键 client_msg_id 客户端生成(`device_id+自增`),去重键 = sender_id+client_msg_id。下行带 server_msg_id+seq,不带 client_msg_id。
 - **有序 seq**:服务端落库同一事务内 `UPDATE im_conversation SET last_seq=last_seq+1` 分配;不用 Redis INCR。
 - **可靠投递**:双 ACK(STORE=已落库 / DELIVER=对方已送达),发送方超时同一 client_msg_id 重传(3s 超时、指数退避、上限 6 次)。
+- **客户端发送确认机**:pending 表 + 超时重传 + 断线感知(重连后 flush pending)。client_msg_id 必须**每次会话唯一**(deviceId + 会话随机前缀 + 自增),防客户端重启回绕撞 TTL 内旧 key。ACK 必须回带 client_msg_id,客户端才能精确匹配。
+- **seq 分配(业务层取号)**:用 **Redis INCR `im:conv:seq:{conversationId}`** 集中发号(不是 DB 自增/锁)。**两段式**:保序段(Orderly 消费:去重+取seq+绑定)串行且极短,顺序在此钉死;并发段(线程池:落库+ACK+推送)全并行——顺序由 seq 承载,后续并发不破坏。保序链路:EventLoop 按到达顺序提交 → per-conversation 单线程 executor 串行 produce(同步 send)→ 按会话选同一 MQ 队列 → chat Orderly 串行取号。关键教训:并发时"抢锁顺序≠到达顺序",必须 FIFO 队列;异步 send 无法保序,必须同步。
 - **缓存**:先 MySQL 后 Redis,消息 append-only 不双删,客户端 seq 补拉自愈。
 - **心跳**:客户端 10s PING,服务端 IdleState 30s 兜底断连,Redis TTL=30s。
 - **MVP 范围**:单聊/单节点/无网关/无群聊/无多端/有 token 鉴权/必须有 RocketMQ。压测后置。
