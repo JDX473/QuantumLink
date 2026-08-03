@@ -3,6 +3,7 @@ package com.quantumlink.im.connect.server;
 import com.quantumlink.im.common.protocol.ImFrameDecoder;
 import com.quantumlink.im.common.protocol.ImFrameEncoder;
 import com.quantumlink.im.connect.config.ConnectConfig;
+import com.quantumlink.im.connect.consumer.DownstreamConsumer;
 import com.quantumlink.im.connect.handler.HandshakeHandler;
 import com.quantumlink.im.connect.handler.HeartbeatHandler;
 import com.quantumlink.im.connect.handler.MessageDispatcher;
@@ -51,6 +52,7 @@ public class NettyConnectServer {
     private final ConnectConfig config;
     private SessionRegistry sessionRegistry;
     private UpstreamProducer upstreamProducer;
+    private DownstreamConsumer downstreamConsumer;
     private ExecutorService bizExecutor;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
@@ -63,6 +65,7 @@ public class NettyConnectServer {
         // 1. 依赖
         this.sessionRegistry = new SessionRegistry(config);
         this.upstreamProducer = new UpstreamProducer(config);
+        this.downstreamConsumer = new DownstreamConsumer(config);
         this.bizExecutor = new ThreadPoolExecutor(
                 config.bizThreads, config.bizThreads,
                 60, TimeUnit.SECONDS,
@@ -108,6 +111,7 @@ public class NettyConnectServer {
     public void shutdown() {
         if (bizExecutor != null) bizExecutor.shutdown();
         if (upstreamProducer != null) upstreamProducer.shutdown();
+        if (downstreamConsumer != null) downstreamConsumer.shutdown();
         if (sessionRegistry != null) sessionRegistry.shutdown();
         if (workerGroup != null) workerGroup.shutdownGracefully();
         if (bossGroup != null) bossGroup.shutdownGracefully();

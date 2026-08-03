@@ -3,6 +3,7 @@ package com.quantumlink.im.connect.handler;
 import com.quantumlink.im.common.protocol.*;
 import com.quantumlink.im.common.util.JsonUtil;
 import com.quantumlink.im.common.util.ProtocolUtil;
+import com.quantumlink.im.connect.service.ChannelManager;
 import com.quantumlink.im.connect.service.ConnectionContext;
 import com.quantumlink.im.connect.service.SessionRegistry;
 import io.netty.channel.ChannelFutureListener;
@@ -60,8 +61,9 @@ public class HandshakeHandler extends SimpleChannelInboundHandler<ImFrame> {
             return;
         }
 
-        // 鉴权通过:注册会话 + 绑定上下文 + 回 ACK
+        // 鉴权通过:注册会话 + 加入本地连接管理 + 绑定上下文 + 回 ACK
         sessionRegistry.register(userId, handshake.getDeviceId(), nodeId);
+        ChannelManager.add(userId, handshake.getDeviceId(), ctx.channel());
         ConnectionContext.bind(ctx.channel(), userId, handshake.getDeviceId());
 
         HandshakeAckPayload ack = new HandshakeAckPayload();

@@ -1,0 +1,119 @@
+package com.quantumlink.im.connect.consumer;
+
+import com.quantumlink.im.common.protocol.AckPayload;
+import com.quantumlink.im.common.protocol.DownstreamEnvelope;
+import com.quantumlink.im.common.protocol.FrameType;
+import com.quantumlink.im.common.protocol.MessagePayload;
+import com.quantumlink.im.common.util.JsonUtil;
+import com.quantumlink.im.common.util.ProtocolUtil;
+import com.quantumlink.im.connect.config.ConnectConfig;
+import com.quantumlink.im.connect.service.ChannelManager;
+import io.netty.channel.Channel;
+import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
+import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
+import org.apache.rocketmq.common.message.MessageExt;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Collection;
+
+/**
+ * 下行消费者:消费 {@code server2client}(chat 发来的消息/回执),推给目标连接。
+ *
+ * <p>统一信封 {@link DownstreamEnvelope}:只解析一种结构,按 contentType 分发:
+ * <ul>
+ *   <li>ACK → 包装成 MSG_ACK 帧,推给发送方;</li>
+ *   <li>MSG → 包装成 MSG 帧,推给接收方。</li>
+ * </ul>
+ *
+ * <p>推给谁:envelope.targetUserId(+targetDeviceId)。deviceId 为空 = 该用户所有在线设备(多端全推)。
+ *
+ * <p>注意:推送写在 MQ 消费线程,写 Channel 用 {@code channel.eventLoop().execute(...)}
+ * 保证线程安全(不直接跨线程写 Netty Channel)。
+ */
+public class DownstreamConsumer {
+    private static final Logger log = LoggerFactory.getLogger(DownstreamConsumer.class);
+
+    private final DefaultMQPushConsumer consumer;
+
+    public DownstreamConsumer(ConnectConfig config) {
+        this.consumer = new DefaultMQPushConsumer("im-connect-consumer");
+        this.consumer.setNamesrvAddr(config.namesrvAddr);
+        try {
+            this.consumer.subscribe("server2client", "*");
+            this.consumer.registerMessageListener((MessageListenerConcurrently) (msgs, context) -> {
+                for (MessageExt msg : msgs) {
+                    try {
+                        handle(msg);
+                    } catch (Exception e) {
+                        log.error("handle downstream message error, retry later: msgId={}", msg.getMsgId(), e);
+                        return ConsumeConcurrentlyStatus.RECONSUME_LATER;
+                    }
+                }
+                return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+            });
+            this.consumer.start();
+            log.info("downstream consumer started: topic=server2client");
+        } catch (Exception e) {
+            throw new IllegalStateException("start downstream consumer failed", e);
+        }
+    }
+
+    private void handle(MessageExt msg) {
+        String json = new String(msg.getBody(), StandardCharsets.UTF_8);
+        DownstreamEnvelope envelope = JsonUtil.fromJson(json, DownstreamEnvelope.class);
+        if (envelope == null || envelope.getTargetUserId() == null) {
+            log.warn("bad downstream envelope, skip");
+            return;
+        }
+
+        // 定位目标连接
+        Collection<Channel> channels;
+        if (envelope.getTargetDeviceId() != null) {
+            Channel ch = ChannelManager.get(envelope.getTargetUserId(), envelope.getTargetDeviceId());
+            channels = ch == null ? java.util.Collections.emptyList() : java.util.Collections.singletonList(ch);
+        } else {
+            channels = ChannelManager.getAll(envelope.getTargetUserId());
+        }
+
+        if (channels.isEmpty()) {
+            // 接收方离线:消息已落库,上线走增量拉取(Phase 2)。这里不推送。
+            log.info("target offline, skip push: user={} type={}", envelope.getTargetUserId(), envelope.getContentType());
+            return;
+        }
+
+        // 按类型包装成客户端帧,推给每个目标 channel
+        FrameType frameType = switch (envelope.getContentType()) {
+            case DownstreamEnvelope.TYPE_ACK -> FrameType.MSG_ACK;
+            case DownstreamEnvelope.TYPE_MSG -> FrameType.MSG;
+            default -> {
+                log.warn("unknown contentType: {}", envelope.getContentType());
+                yield null;
+            }
+        };
+        if (frameType == null) {
+            return;
+        }
+
+        for (Channel channel : channels) {
+            if (!channel.isActive()) {
+                continue;
+            }
+            // 写 Channel 必须在 eventLoop 线程,保证线程安全
+            channel.eventLoop().execute(() -> {
+                try {
+                    channel.writeAndFlush(ProtocolUtil.buildFrame(frameType, envelope.getBodyJson().getBytes(StandardCharsets.UTF_8)));
+                } catch (Exception e) {
+                    log.error("push to channel failed: user={}", envelope.getTargetUserId(), e);
+                }
+            });
+        }
+        log.info("downstream pushed: user={} devices={} type={}", envelope.getTargetUserId(), channels.size(), envelope.getContentType());
+    }
+
+    public void shutdown() {
+        consumer.shutdown();
+    }
+}

@@ -1,5 +1,6 @@
 package com.quantumlink.im.chat.mq;
 
+import com.quantumlink.im.common.protocol.DownstreamEnvelope;
 import com.quantumlink.im.common.util.JsonUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
@@ -15,13 +16,13 @@ import java.nio.charset.StandardCharsets;
 /**
  * 下行生产者:chat → connect({@code server2client})。
  *
- * <p>承载两类下行:
+ * <p>承载两类下行(统一走 {@link DownstreamEnvelope} 信封):
  * <ul>
  *   <li>ACK 回执(ACK-STORE 等):发给发送方;</li>
- *   <li>消息推送(Phase 2):发给接收方。</li>
+ *   <li>消息推送:发给接收方。</li>
  * </ul>
  *
- * <p>MVP 单节点:消息直接发到下游 topic,connect 消费后推给目标 channel。
+ * <p>统一信封让 connect 只解析一种结构;加新下行类型(如 DELIVER)只需扩展 contentType。
  */
 @Slf4j
 @Component
@@ -47,14 +48,21 @@ public class DownstreamProducer {
         }
     }
 
-    /** 发送 ACK 回执(同步,MVP 足够;Phase 2 可改异步) */
-    public void sendAck(Object ack) {
-        send(JsonUtil.toJson(ack));
-    }
-
-    /** 发送下行消息 */
-    public void send(Object body) {
-        send(JsonUtil.toJson(body));
+    /**
+     * 发送下行消息(统一信封)。
+     *
+     * @param targetUserId  推给哪个用户
+     * @param targetDeviceId 目标设备,null = 多端全推
+     * @param contentType    DownstreamEnvelope.TYPE_ACK / TYPE_MSG
+     * @param body           AckPayload 或 MessagePayload
+     */
+    public void sendEnvelope(String targetUserId, String targetDeviceId, String contentType, Object body) {
+        DownstreamEnvelope envelope = new DownstreamEnvelope();
+        envelope.setTargetUserId(targetUserId);
+        envelope.setTargetDeviceId(targetDeviceId);
+        envelope.setContentType(contentType);
+        envelope.setBodyJson(JsonUtil.toJson(body));
+        send(JsonUtil.toJson(envelope));
     }
 
     private void send(String json) {

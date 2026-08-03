@@ -8,6 +8,7 @@ import com.quantumlink.im.chat.mapper.MessageMapper;
 import com.quantumlink.im.chat.mq.DownstreamProducer;
 import com.quantumlink.im.common.protocol.AckPayload;
 import com.quantumlink.im.common.protocol.AckType;
+import com.quantumlink.im.common.protocol.DownstreamEnvelope;
 import com.quantumlink.im.common.protocol.MessagePayload;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -102,12 +103,17 @@ public class MessageService {
         log.info("message stored: msgId={} conv={} seq={} sender={}",
                 message.getId(), payload.getConversationId(), seq, payload.getSenderId());
 
-        // ④ 回 ACK-STORE(经下行 MQ 给发送方)
+        // ④ 回 ACK-STORE 给发送方(经下行 MQ,统一信封)
         sendStoreAck(payload, message.getId(), seq);
 
-        // ⑤ 下行推送:发送方→接收方(Phase 1 先记录,Phase 2 接入 connect 消费推送)
-        // 此处先不直接推(connect 消费 server2client 在下阶段实现),
-        // 但 ACK 已通过下行 MQ 发出,可靠投递的核心已打通。
+        // ⑤ 下行推送:消息推给接收方。把 serverMsgId + seq 填回 payload,
+        //    接收方客户端据此排序(seq)和引用消息(serverMsgId)。
+        payload.setServerMsgId(message.getId());
+        payload.setSeq(seq);
+        payload.setServerTime(message.getServerTime());
+        downstreamProducer.sendEnvelope(
+                payload.getReceiverId(), null,
+                DownstreamEnvelope.TYPE_MSG, payload);
     }
 
     /** 构建会话 ID:min(a,b)#max(a,b),保证 A→B 和 B→A 是同一个会话 */
@@ -148,7 +154,7 @@ public class MessageService {
                         .eq(Message::getClientMsgId, clientMsgId));
     }
 
-    /** 回 ACK-STORE:携带 server_msg_id + seq,经下行 MQ 给发送方 */
+    /** 回 ACK-STORE:携带 server_msg_id + seq,经下行 MQ 给发送方(统一信封) */
     private void sendStoreAck(MessagePayload payload, Long serverMsgId, Long seq) {
         AckPayload ack = new AckPayload();
         ack.setAckType(AckType.STORE);
@@ -156,7 +162,9 @@ public class MessageService {
         ack.setSeq(seq);
         ack.setReceiverId(payload.getReceiverId());
         ack.setConversationId(payload.getConversationId());
-        downstreamProducer.sendAck(ack);
+        downstreamProducer.sendEnvelope(
+                payload.getSenderId(), null,
+                DownstreamEnvelope.TYPE_ACK, ack);
         log.info("ACK-STORE sent: sender={} clientMsgId={} serverMsgId={} seq={}",
                 payload.getSenderId(), payload.getClientMsgId(), serverMsgId, seq);
     }
