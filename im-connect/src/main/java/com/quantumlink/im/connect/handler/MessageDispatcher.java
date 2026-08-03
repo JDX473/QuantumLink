@@ -1,5 +1,6 @@
 package com.quantumlink.im.connect.handler;
 
+import com.quantumlink.im.common.protocol.AckPayload;
 import com.quantumlink.im.common.protocol.ImFrame;
 import com.quantumlink.im.common.protocol.MessagePayload;
 import com.quantumlink.im.common.util.ConversationIdUtil;
@@ -104,5 +105,26 @@ public class MessageDispatcher {
         sessionRegistry.remove(userId, deviceId);
         ConnectionContext.clear(channel);
         log.info("disconnect cleaned: user={} device={}", userId, deviceId);
+    }
+
+    /**
+     * 已送达回执(DELIVER_ACK):接收方 B 收到消息后回执。
+     * 解析 AckPayload,发到 {@code deliver_ack} topic,chat 消费后更新消息状态并回 DELIVER 给 A。
+     */
+    public void dispatchDeliverAck(String userId, String deviceId, ImFrame frame) {
+        AckPayload ack = ProtocolUtil.parseBody(frame, AckPayload.class);
+        if (ack == null || ack.getServerMsgId() == null) {
+            log.warn("bad deliver ack, skip: user={}", userId);
+            return;
+        }
+        ack.setReceiverId(userId); // 记录是谁确认的(接收方)
+
+        // 按会话选同一队列(与消息同队列保持顺序);这里 conversationId 由客户端回执携带
+        String conversationId = ack.getConversationId();
+        String json = JsonUtil.toJson(ack);
+        boolean ok = upstreamProducer.sendToTopic("deliver_ack", json, conversationId == null ? "" : conversationId);
+        if (!ok) {
+            log.error("deliver_ack send failed: user={} serverMsgId={}", userId, ack.getServerMsgId());
+        }
     }
 }

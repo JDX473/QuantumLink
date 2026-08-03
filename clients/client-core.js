@@ -141,10 +141,19 @@ class ImClient {
         this.conversationLastSeq.set(body.conversationId, body.seq);
       }
     }
+    // 收到消息 → 回 DELIVER_ACK(通知服务端"我收到了",服务端转给发送方显示已送达)
+    if (body && body.serverMsgId != null) {
+      this.sendFrame(FrameType.DELIVER_ACK, {
+        ackType: 'DELIVER',
+        serverMsgId: body.serverMsgId,
+        seq: body.seq,
+        conversationId: body.conversationId,
+      });
+    }
     if (this.handlers.onMessage) this.handlers.onMessage(body);
   }
 
-  /** 收到 ACK-STORE:用 clientMsgId 匹配 pending,标记发送成功 */
+  /** 收到 ACK(STORE/DELIVER):STORE 用 clientMsgId 匹配 pending;DELIVER 单独回调 */
   _onAck(ack) {
     if (ack && ack.ackType === 'STORE' && ack.clientMsgId) {
       const item = this.pending.get(ack.clientMsgId);
@@ -156,6 +165,11 @@ class ImClient {
         return;
       }
       // pending 里没有 → 可能是重复 ACK,忽略
+    }
+    // DELIVER(对方已送达):单独回调,上层可显示"已送达/已读"
+    if (ack && ack.ackType === 'DELIVER' && this.handlers.onDelivered) {
+      this.handlers.onDelivered(ack);
+      return;
     }
     if (this.handlers.onAck) this.handlers.onAck(ack);
   }

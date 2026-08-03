@@ -43,10 +43,18 @@ public class MessageHandler extends SimpleChannelInboundHandler<ImFrame> {
 
         switch (frame.getType()) {
             case MSG -> handleMessage(ctx.channel(), frame);
+            case DELIVER_ACK -> handleDeliverAck(ctx.channel(), frame);
             case PING -> handlePing(ctx.channel());
             case PONG -> handlePong(ctx.channel());
             default -> log.warn("unexpected frame type after handshake: {}", frame.getType());
         }
+    }
+
+    /** 已送达回执:接收方收到消息后回执。EventLoop 上轻量解析,交给 dispatcher 发 MQ */
+    private void handleDeliverAck(Channel channel, ImFrame frame) {
+        String userId = ConnectionContext.userId(channel);
+        String deviceId = ConnectionContext.deviceId(channel);
+        dispatcher.dispatchDeliverAck(userId, deviceId, frame);
     }
 
     /** 消息帧:EventLoop 只做轻量分发,保序交给 per-conversation 串行执行器 */
