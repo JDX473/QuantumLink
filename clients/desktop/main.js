@@ -1,0 +1,133 @@
+/**
+ * QuantumLink 桌面客户端 - Electron 主进程
+ *
+ * 职责:
+ * - 创建桌面窗口
+ * - 在主进程维护 TCP 长连接(复用 clients/client-core.js 的 ImClient)
+ * - 通过 preload 的 contextBridge 把客户端能力暴露给渲染进程(UI)
+ *
+ * 为什么 TCP 放主进程:
+ * 渲染进程默认无 Node 能力(安全),原生 TCP 只能在主进程(Node 环境)跑。
+ * 主进程作为"连接层",渲染进程作为"UI 层",通过 IPC 通信——和
+ * 服务端 im-connect(连接) / im-chat(业务) 的分层思想一致。
+ */
+const { app, BrowserWindow, ipcMain } = require('electron');
+const path = require('path');
+
+// 复用自定义 TCP 客户端核心(握手/心跳/重连/重传/增量拉取)
+const { ImClient } = require('../client-core.js');
+
+let mainWindow = null;
+let client = null;
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 980,
+    height: 720,
+    minWidth: 760,
+    minHeight: 560,
+    backgroundColor: '#0B0F1A',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#0B0F1A',
+      symbolColor: '#8B93A7',
+      height: 44,
+    },
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+
+  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+}
+
+// ---- IPC:渲染进程 → 主进程 ----
+
+/** 登录:调业务层 HTTP 拿 token/deviceId,再建立长连接 */
+ipcMain.handle('auth:login', async (_e, { username, password, deviceType }) => {
+  const res = await fetch('http://127.0.0.1:8081/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, deviceType: deviceType || 'desktop' }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || 'login failed');
+  return { token: data.token, deviceId: data.deviceId, userId: data.userId };
+});
+
+/** 注册 */
+ipcMain.handle('auth:register', async (_e, { username, password }) => {
+  const res = await fetch('http://127.0.0.1:8081/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || 'register failed');
+  return data;
+});
+
+/** 建立长连接(握手) */
+ipcMain.handle('connect:start', async (_e, { token, deviceId }) => {
+  if (client) { client.close(); client = null; }
+
+  client = new ImClient({
+    host: '127.0.0.1',
+    port: 9999,
+    token,
+    deviceId,
+    deviceType: 'desktop',
+    apiBase: 'http://127.0.0.1:8081',
+    handlers: {
+      onConnected: (userId) => sendToRenderer('conn:status', { status: 'connected', userId }),
+      onMessage: (msg) => sendToRenderer('msg:received', msg),
+      onAck: (ack) => sendToRenderer('msg:ack', ack),
+      onDelivered: (ack) => sendToRenderer('msg:delivered', ack),
+      onClosed: () => sendToRenderer('conn:status', { status: 'closed' }),
+      onSendFailed: (msg) => sendToRenderer('msg:failed', msg),
+    },
+  });
+  client.connect();
+  return { ok: true };
+});
+
+/** 发送消息 */
+ipcMain.handle('chat:send', async (_e, { receiverId, content, msgType }) => {
+  if (!client) throw new Error('not connected');
+  return client.sendMessage({
+    receiverId,
+    msgType: msgType || 'TEXT',
+    content,
+    clientTime: Date.now(),
+  });
+});
+
+/** 断开 */
+ipcMain.handle('connect:close', () => {
+  if (client) { client.close(); client = null; }
+  return { ok: true };
+});
+
+/** 当前连接状态 */
+ipcMain.handle('conn:status', () => {
+  return { connected: client ? client.connected : false, authenticated: client ? client.authenticated : false };
+});
+
+function sendToRenderer(channel, data) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, data);
+  }
+}
+
+app.whenReady().then(createWindow);
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
