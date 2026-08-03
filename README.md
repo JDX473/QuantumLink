@@ -26,7 +26,7 @@ im-connect → 目标客户端
 
 | 模块 | 端口 | 职责 | 状态 |
 |------|------|------|------|
-| im-common | — | 自定义 TCP 协议帧、DTO、工具 | 骨架 |
+| im-common | — | 自定义 TCP 协议帧、DTO、工具 | ✅ 协议编解码+测试通过 |
 | im-connect | 9999 | Netty 长连接层:握手鉴权/心跳/上行 | 骨架 |
 | im-gateway | 88 | 入口代理(负载均衡+Nacos 路由) | MVP 后置 |
 | im-chat | 8081 | 业务层:鉴权/持久化/seq/离线/回执 | 骨架 |
@@ -66,7 +66,7 @@ java -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
 ## 项目进展
 
 - **2026-08-03(Phase 0 脚手架)**:Maven 多模块骨架、本机中间件启动脚本、建库建表、README、提交规矩。
-- **进行中**:Phase 1 端到端骨架(连接+收发+存储)。
+- **2026-08-03(Phase 1 协议层)**:im-common 自定义 TCP 协议完成——帧编解码器(ImFrameEncoder/Decoder)、CRC32 校验、payload 类型(握手/消息/回执/错误)、粘包拆包与半包单测(3 个测试全过)。
 
 ## 文档
 
