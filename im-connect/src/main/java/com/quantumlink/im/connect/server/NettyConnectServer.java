@@ -22,11 +22,6 @@ import io.netty.handler.timeout.IdleStateHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-
 /**
  * QuantumLink 长连接层 Netty TCP 服务器。
  *
@@ -53,7 +48,6 @@ public class NettyConnectServer {
     private SessionRegistry sessionRegistry;
     private UpstreamProducer upstreamProducer;
     private DownstreamConsumer downstreamConsumer;
-    private ExecutorService bizExecutor;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
 
@@ -66,11 +60,6 @@ public class NettyConnectServer {
         this.sessionRegistry = new SessionRegistry(config);
         this.upstreamProducer = new UpstreamProducer(config);
         this.downstreamConsumer = new DownstreamConsumer(config);
-        this.bizExecutor = new ThreadPoolExecutor(
-                config.bizThreads, config.bizThreads,
-                60, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(10_000),
-                new ThreadPoolExecutor.CallerRunsPolicy());
 
         MessageDispatcher dispatcher = new MessageDispatcher(sessionRegistry, upstreamProducer);
 
@@ -92,14 +81,14 @@ public class NettyConnectServer {
                                 .addLast("heartbeat", new HeartbeatHandler(sessionRegistry))
                                 .addLast("idle", new IdleStateHandler(30, 0, 0))
                                 .addLast("handshake", new HandshakeHandler(sessionRegistry, nodeId()))
-                                .addLast("message", new MessageHandler(bizExecutor, dispatcher))
+                                .addLast("message", new MessageHandler(dispatcher))
                                 .addLast("frameEncoder", new ImFrameEncoder());
                     }
                 });
 
         ChannelFuture future = bootstrap.bind(config.port).sync();
-        log.info("im-connect listening on port {} (biz threads={}, worker threads={})",
-                config.port, config.bizThreads, config.workerThreads);
+        log.info("im-connect listening on port {} (worker threads={})",
+                config.port, config.workerThreads);
         future.channel().closeFuture().sync();
     }
 
@@ -109,7 +98,6 @@ public class NettyConnectServer {
     }
 
     public void shutdown() {
-        if (bizExecutor != null) bizExecutor.shutdown();
         if (upstreamProducer != null) upstreamProducer.shutdown();
         if (downstreamConsumer != null) downstreamConsumer.shutdown();
         if (sessionRegistry != null) sessionRegistry.shutdown();

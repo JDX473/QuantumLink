@@ -2,7 +2,6 @@ package com.quantumlink.im.connect.handler;
 
 import com.quantumlink.im.common.protocol.FrameType;
 import com.quantumlink.im.common.protocol.ImFrame;
-import com.quantumlink.im.common.protocol.MessagePayload;
 import com.quantumlink.im.common.util.ProtocolUtil;
 import com.quantumlink.im.connect.service.ConnectionContext;
 import io.netty.channel.Channel;
@@ -11,29 +10,27 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.ExecutorService;
-
 /**
  * 消息处理器:处理握手后的业务帧(MSG / PING / PONG)。
  *
- * <p>核心设计(面试点):<b>EventLoop 只做收发,阻塞操作丢业务线程池。</b>
+ * <p>核心设计(面试点):<b>EventLoop 只做收发与保序分发,阻塞操作交给下游。</b>
  * <ul>
  *   <li>channelRead0 在 EventLoop 线程执行,只做最轻的帧类型分发;</li>
- *   <li>MSG 的 JSON 反序列化 + 发 RocketMQ(可能阻塞)交给 {@code bizExecutor};</li>
+ *   <li>MSG 交给 {@link MessageDispatcher#dispatchFrame}:EventLoop 上解析出
+ *       conversationId 并提交到该会话的单线程 FIFO 队列,队列内串行 produce
+ *       (同步发 RocketMQ 发生在会话执行器线程,不阻塞 EventLoop);</li>
  *   <li>写回 Channel 时用 {@code channel.eventLoop().execute(...)} 保证线程安全。</li>
  * </ul>
  *
  * <p>为什么不能阻塞 EventLoop:一个 EventLoop 管着成百上千条连接,
- * 在其中同步 JSON + 发 MQ,一条慢就把该 EventLoop 上所有连接全部拖垮(线程雪崩)。
+ * 在其中同步发 MQ,一条慢就把该 EventLoop 上所有连接全部拖垮(线程雪崩)。
  */
 public class MessageHandler extends SimpleChannelInboundHandler<ImFrame> {
     private static final Logger log = LoggerFactory.getLogger(MessageHandler.class);
 
-    private final ExecutorService bizExecutor;
     private final MessageDispatcher dispatcher;
 
-    public MessageHandler(ExecutorService bizExecutor, MessageDispatcher dispatcher) {
-        this.bizExecutor = bizExecutor;
+    public MessageHandler(MessageDispatcher dispatcher) {
         this.dispatcher = dispatcher;
     }
 
@@ -52,25 +49,17 @@ public class MessageHandler extends SimpleChannelInboundHandler<ImFrame> {
         }
     }
 
-    /** 消息帧:EventLoop 只做轻量分发,重活交给业务线程池 */
+    /** 消息帧:EventLoop 只做轻量分发,保序交给 per-conversation 串行执行器 */
     private void handleMessage(Channel channel, ImFrame frame) {
         // 轻量解析出 userId/deviceId 快照(不阻塞)
         String userId = ConnectionContext.userId(channel);
         String deviceId = ConnectionContext.deviceId(channel);
 
-        // 丢业务线程池:反序列化 + 发 RocketMQ 在这里做,不阻塞 EventLoop
-        bizExecutor.submit(() -> {
-            try {
-                MessagePayload payload = ProtocolUtil.parseBody(frame, MessagePayload.class);
-                if (payload == null) {
-                    log.warn("parse message failed: user={}", userId);
-                    return;
-                }
-                dispatcher.dispatchUpstream(userId, deviceId, payload);
-            } catch (Exception e) {
-                log.error("handle message error: user={}", userId, e);
-            }
-        });
+        // 把帧交给 dispatcher。dispatcher 内部:解析 JSON(会话执行器里做)→
+        // 提交到该会话的单线程 FIFO 队列 → 串行 produce。
+        // 这里必须直接在 EventLoop 上调用(EventLoop 按 channelRead 顺序执行,
+        // 即按客户端发送顺序),才能保证"到达顺序 = 提交顺序"。
+        dispatcher.dispatchFrame(userId, deviceId, frame);
     }
 
     private void handlePing(Channel channel) {

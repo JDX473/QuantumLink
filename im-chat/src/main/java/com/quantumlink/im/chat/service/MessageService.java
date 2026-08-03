@@ -46,6 +46,9 @@ public class MessageService {
     private static final String DEDUP_PREFIX = "im:msg:dedup:";
     private static final long DEDUP_TTL_SECONDS = 7 * 24 * 3600; // 7 天
 
+    /** 会话 seq 发号 key(Redis INCR):同一会话的唯一 seq 来源 */
+    private static final String CONV_SEQ_PREFIX = "im:conv:seq:";
+
     /**
      * 处理一条上行消息(消费端调用)。
      *
@@ -71,9 +74,11 @@ public class MessageService {
             return;
         }
 
-        // ② 确保会话存在,事务内分配 seq
-        Conversation conv = ensureConversation(payload.getConversationId());
-        Long seq = conv.getLastSeq();
+        // ② 取号:Redis INCR 会话级发号。同一会话的所有消息(无论哪个消费线程)
+        //    都在同一 key 上原子自增,谁先到 Redis 谁拿小号 → seq 唯一且递增。
+        //    有序性由"connect 按会话选同一队列 + chat 队列内串行消费"保证:
+        //    同一会话的消息按发送顺序到达 chat,按序取号。
+        Long seq = redisTemplate.opsForValue().increment(CONV_SEQ_PREFIX + payload.getConversationId());
 
         // ③ 落库
         Message message = new Message();
@@ -118,32 +123,7 @@ public class MessageService {
 
     /** 构建会话 ID:min(a,b)#max(a,b),保证 A→B 和 B→A 是同一个会话 */
     public static String buildConversationId(String a, String b) {
-        if (a == null || b == null) {
-            return a + "#" + b;
-        }
-        int cmp = a.compareTo(b);
-        return cmp <= 0 ? a + "#" + b : b + "#" + a;
-    }
-
-    /** 确保会话存在,并原子分配新 seq(事务内)。 */
-    private Conversation ensureConversation(String conversationId) {
-        Conversation conv = conversationMapper.selectOne(
-                new LambdaQueryWrapper<Conversation>()
-                        .eq(Conversation::getConversationId, conversationId));
-        if (conv == null) {
-            conv = new Conversation();
-            conv.setConversationId(conversationId);
-            conv.setLastSeq(0L);
-            conv.setLastMsgTime(LocalDateTime.now());
-            conversationMapper.insert(conv);
-        }
-        // FOR UPDATE 锁行 → 读最新 last_seq → +1 分配新 seq → 写回
-        // 同一会话的并发消息在此串行,保证 seq 单调不重复
-        Conversation locked = conversationMapper.selectForUpdate(conversationId);
-        long newSeq = locked.getLastSeq() + 1;
-        conversationMapper.updateLastSeq(conversationId, newSeq);
-        conv.setLastSeq(newSeq);
-        return conv;
+        return com.quantumlink.im.common.util.ConversationIdUtil.build(a, b);
     }
 
     private Message findByIdempotencyKey(String senderId, String clientMsgId) {

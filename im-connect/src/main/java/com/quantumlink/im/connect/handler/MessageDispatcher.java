@@ -1,17 +1,21 @@
 package com.quantumlink.im.connect.handler;
 
+import com.quantumlink.im.common.protocol.ImFrame;
 import com.quantumlink.im.common.protocol.MessagePayload;
+import com.quantumlink.im.common.util.ConversationIdUtil;
 import com.quantumlink.im.common.util.JsonUtil;
+import com.quantumlink.im.common.util.ProtocolUtil;
 import com.quantumlink.im.connect.service.ChannelManager;
 import com.quantumlink.im.connect.service.ConnectionContext;
 import com.quantumlink.im.connect.service.SessionRegistry;
 import io.netty.channel.Channel;
-import org.apache.rocketmq.client.producer.SendCallback;
-import org.apache.rocketmq.client.producer.SendResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 消息调度器:连接层的业务入口。
@@ -20,10 +24,14 @@ import java.nio.charset.StandardCharsets;
  * <ul>
  *   <li>上行:把客户端消息发布到 RocketMQ {@code client2server}(chat 消费做落库);</li>
  *   <li>断连清理:移除本地 channel + 清 Redis 会话;</li>
- *   <li>下行(MVP Phase 2):从 {@code server2client} 消费消息推给目标连接。</li>
+ *   <li>下行:从 {@code server2client} 消费消息推给目标连接(见 DownstreamConsumer)。</li>
  * </ul>
  *
- * <p>上行发 MQ 用异步 send({@code asyncSend} + callback),不在调用线程阻塞。
+ * <p><b>有序性关键:每个会话一个串行执行器(per-conversation FIFO 队列)。</b>
+ * 业务线程池并发处理不同消息,若同一会话的两条消息被两个线程并发 produce,
+ * 发到 MQ 的顺序可能颠倒 → 后续 seq 分配乱序。
+ * 解法:同一会话的消息 submit 到同一个单线程执行器,按"到达顺序(FIFO)"依次 produce,
+ * 不同会话用不同执行器,互不阻塞。这是业界标准做法(每会话一个 Processor 线程)。
  */
 public class MessageDispatcher {
     private static final Logger log = LoggerFactory.getLogger(MessageDispatcher.class);
@@ -31,30 +39,56 @@ public class MessageDispatcher {
     private final SessionRegistry sessionRegistry;
     private final UpstreamProducer upstreamProducer;
 
+    /** per-会话串行执行器:conversationId → 单线程 executor,按 FIFO 依次 produce */
+    private final ConcurrentHashMap<String, ExecutorService> conversationExecutors = new ConcurrentHashMap<>();
+    private final AtomicInteger executorSeq = new AtomicInteger(0);
+
     public MessageDispatcher(SessionRegistry sessionRegistry, UpstreamProducer upstreamProducer) {
         this.sessionRegistry = sessionRegistry;
         this.upstreamProducer = upstreamProducer;
     }
 
     /**
-     * 上行:客户端消息 → RocketMQ(chat 消费落库)。
-     * 已在业务线程池中执行,此处可安全阻塞。
+     * 消息帧入口(EventLoop 上调用)。
+     *
+     * <p>这里做两件轻量事:解析出 conversationId(选队列/选会话执行器需要),
+     * 然后提交到该会话的单线程 FIFO 队列。EventLoop 按 channelRead 顺序调用本方法,
+     * 所以提交顺序 = 客户端发送顺序;单线程队列按 FIFO 处理 → produce 保序。
      */
-    public void dispatchUpstream(String userId, String deviceId, MessagePayload payload) {
-        // 补齐发送者身份(防止客户端伪造 senderId)
+    public void dispatchFrame(String userId, String deviceId, ImFrame frame) {
+        // 先解析出 conversationId(轻量 JSON 读取,不阻塞 EventLoop)
+        MessagePayload payload = ProtocolUtil.parseBody(frame, MessagePayload.class);
+        if (payload == null) {
+            log.warn("parse message failed: user={}", userId);
+            return;
+        }
         payload.setSenderId(userId);
+        String conversationId = payload.getConversationId();
+        if (conversationId == null || conversationId.isEmpty()) {
+            conversationId = ConversationIdUtil.build(payload.getSenderId(), payload.getReceiverId());
+            payload.setConversationId(conversationId);
+        }
 
+        // 取该会话的串行执行器(不存在则创建单线程 executor)
+        ExecutorService executor = conversationExecutors.computeIfAbsent(conversationId,
+                k -> Executors.newSingleThreadExecutor(r -> {
+                    Thread t = new Thread(r, "conv-" + k.substring(0, Math.min(8, k.length())) + "-" + executorSeq.incrementAndGet());
+                    t.setDaemon(true);
+                    return t;
+                }));
+
+        // 提交到 FIFO 队列:按到达顺序串行 produce(不同会话并行)
         String json = JsonUtil.toJson(payload);
-        upstreamProducer.sendAsync(json, new SendCallback() {
-            @Override
-            public void onSuccess(SendResult sendResult) {
-                log.debug("upstream sent: user={} msg={}", userId, payload.getClientMsgId());
-            }
-
-            @Override
-            public void onException(Throwable e) {
-                // 发 MQ 失败:Phase 2 会在这里触发重传/补偿
-                log.error("upstream send failed: user={} clientMsgId={}", userId, payload.getClientMsgId(), e);
+        final String finalConversationId = conversationId;
+        final String clientMsgId = payload.getClientMsgId();
+        executor.execute(() -> {
+            try {
+                boolean ok = upstreamProducer.send(json, finalConversationId);
+                if (!ok) {
+                    log.error("upstream send failed: user={} clientMsgId={}", userId, clientMsgId);
+                }
+            } catch (Exception e) {
+                log.error("dispatch upstream error: user={} clientMsgId={}", userId, clientMsgId, e);
             }
         });
     }
