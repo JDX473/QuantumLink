@@ -32,5 +32,7 @@ public class AuthDtos {
         private String token;
         private String deviceId;
         private String userId;
+        private String username;
+        private String avatarUrl;
     }
 }

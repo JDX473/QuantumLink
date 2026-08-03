@@ -93,6 +93,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - **2026-08-03(Electron 桌面端)**:新增 `clients/desktop/`——Electron 桌面客户端。TCP 连接在主进程(复用 client-core.js),UI 走渲染进程(IPC + preload)。**报文式消息 UI**:每条消息带元数据头(发送者/seq/时间)+ 送达状态灯(发送中/已存储/对方已送达),深色信号主题(信号青+量子紫)。含登录/注册界面、会话栏、实时链路状态条。**启动**:`cd clients/desktop && npm install && npm start`。
 - **2026-08-04(用户名→userId 解析)**:聊天填用户名(可变、好记)自动解析成 userId(不变、服务端分配的身份锚点)再发送。新增 `GET /api/users/resolve?username=` 接口;桌面端发送前先解析。**设计**:userId 是稳定身份,username 可变——用户改名不影响历史消息/会话/设备。修复:桌面端发送时 IPC 返回 Promise 需用 `.then` 拿 clientMsgId,否则 ACK 匹配不到、状态一直"发送中"。
 - **2026-08-04(会话列表 UI 重构)**:聊天交互对齐微信/Discord——左侧会话列表(对方用户名+最后消息+时间,点击选中)+ 右侧消息流 + 输入框直接发(无需填接收方);新会话用＋弹窗输入用户名解析建会话。chat 新增 `GET /api/conversations?userId=` 会话列表接口(按消息聚合+解析对方用户名)。**验证**:会话列表接口返回正确(含 peerUsername/lastMessage/时间)。
+- **2026-08-04(头像功能 + 不暴露 userId)**:MinIO 对象存储(本地 F:\Study\MinIO,新数据目录 quantumlink-data)。注册带头像(`/api/auth/register/avatar`)、改头像(`/api/users/{userId}/avatar`)、im_user 加 avatar_url、登录返回 avatarUrl。**消息下行带 senderName + senderAvatar,UI 只显示头像+名字,不暴露 userId**(内部仍带 senderId 用于归属)。会话列表带头像。**踩坑**:系统环境变量 MINIO_ACCESS_KEY 残留覆盖配置(改 accessKey key 避开)、MinIO 旧数据目录凭证不符(新目录启动)。**验证**:注册/改头像/MinIO 存储/URL 访问/消息下行带资料 全链路通过。
 
 ## 分支
 

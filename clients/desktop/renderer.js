@@ -28,6 +28,8 @@ $('.login-tabs').addEventListener('click', (e) => {
   tab.classList.add('active');
   currentTab = tab.dataset.tab;
   $('#auth-error').textContent = '';
+  // 头像上传字段只在注册 tab 显示
+  $('#avatar-field').style.display = (currentTab === 'register') ? 'flex' : 'none';
 });
 
 // 表单提交
@@ -45,8 +47,19 @@ $('#auth-form').addEventListener('submit', async (e) => {
 
   try {
     if (currentTab === 'register') {
-      const reg = await api.register({ username, password });
-      if (!reg || reg.success === false) throw new Error((reg && reg.message) || '注册失败');
+      // 如果有头像文件,走 multipart 注册
+      const avatarFile = $('#avatar-file').files[0];
+      if (avatarFile) {
+        const fileData = await fileToBase64(avatarFile);
+        const reg = await api.registerWithAvatar({
+          username, password,
+          fileData, fileName: avatarFile.name, mimeType: avatarFile.type,
+        });
+        if (!reg || reg.success === false) throw new Error((reg && reg.message) || '注册失败');
+      } else {
+        const reg = await api.register({ username, password });
+        if (!reg || reg.success === false) throw new Error((reg && reg.message) || '注册失败');
+      }
       currentTab = 'login';
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'login'));
       btn.textContent = '连接';
@@ -102,12 +115,20 @@ async function loadConversations() {
     item.className = 'conv-item';
     item.dataset.convId = conv.conversationId;
     item.dataset.peer = conv.peerUserId;
+    const avatarHtml = conv.peerAvatar
+      ? `<img class="conv-avatar" src="${escapeHtml(conv.peerAvatar)}" alt="" onerror="this.style.display='none'">`
+      : `<span class="conv-avatar conv-avatar-placeholder">${escapeHtml((conv.peerUsername || '?')[0])}</span>`;
     item.innerHTML = `
-      <div class="conv-item-top">
-        <span class="conv-item-name">${escapeHtml(conv.peerUsername || conv.peerUserId)}</span>
-        <span class="conv-item-time">${conv.lastTime ? formatTime(conv.lastTime) : ''}</span>
+      <div class="conv-item-row">
+        ${avatarHtml}
+        <div class="conv-item-body">
+          <div class="conv-item-top">
+            <span class="conv-item-name">${escapeHtml(conv.peerUsername || conv.peerUserId)}</span>
+            <span class="conv-item-time">${conv.lastTime ? formatTime(conv.lastTime) : ''}</span>
+          </div>
+          <div class="conv-item-preview">${escapeHtml(conv.lastMessage || '')}</div>
+        </div>
       </div>
-      <div class="conv-item-preview">${escapeHtml(conv.lastMessage || '')}</div>
     `;
     item.addEventListener('click', () => openConversation(conv.conversationId, conv.peerUserId, conv.peerUsername));
     list.appendChild(item);
@@ -148,8 +169,14 @@ function renderMessage(msg, status) {
 
   const head = document.createElement('div');
   head.className = 'msg-head';
+  // 显示头像 + 用户名(senderName),不暴露 userId
+  const displayName = isMine ? '我' : (msg.senderName || msg.senderId || '?');
+  const avatarHtml = msg.senderAvatar
+    ? `<img class="msg-avatar" src="${escapeHtml(msg.senderAvatar)}" alt="" onerror="this.style.display='none'">`
+    : `<span class="msg-avatar msg-avatar-placeholder">${escapeHtml((displayName || '?')[0])}</span>`;
   head.innerHTML = `
-    <span class="msg-sender">${escapeHtml(isMine ? '我' : (msg.senderId || '?'))}</span>
+    <span class="msg-avatar-wrap">${avatarHtml}</span>
+    <span class="msg-sender">${escapeHtml(displayName)}</span>
     <span class="msg-seq">seq:${msg.seq ?? '—'}</span>
     <span class="msg-time">${msg.serverTime ? formatTime(msg.serverTime) : ''}</span>
   `;
@@ -188,6 +215,21 @@ function updateMessageStatus(el, status) {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+/** 文件转 base64(传给主进程做 multipart 上传) */
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      // FileReader 结果是 data:image/png;base64,xxx → 取逗号后部分
+      const dataUrl = reader.result;
+      const base64 = dataUrl.split(',')[1] || '';
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 function formatTime(ms) {

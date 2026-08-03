@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS `im_user` (
     `user_id`       VARCHAR(64)  NOT NULL COMMENT '服务端分配,用户身份',
     `username`      VARCHAR(64)  NOT NULL COMMENT '登录名',
     `password_hash` VARCHAR(128) NOT NULL COMMENT '密码哈希',
+    `avatar_url`    VARCHAR(255) NULL COMMENT '头像 URL(MinIO)',
     `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_user_id` (`user_id`),

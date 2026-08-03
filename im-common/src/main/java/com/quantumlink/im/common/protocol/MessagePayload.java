@@ -22,6 +22,12 @@ public class MessagePayload {
     private String senderId;
     private String receiverId;
 
+    /** 发送者用户名(下行填充,UI 显示用,不暴露 userId) */
+    private String senderName;
+
+    /** 发送者头像 URL(下行填充,UI 显示用) */
+    private String senderAvatar;
+
     /** 消息类型: TEXT / IMAGE ... */
     private String msgType;
 

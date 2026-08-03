@@ -118,22 +118,24 @@ public class MessageQueryService {
             String peer = m.getSenderId().equals(userId) ? m.getReceiverId() : m.getSenderId();
             peerIds.add(peer);
         }
-        Map<String, String> idToName = new java.util.HashMap<>();
+        Map<String, User> peerMap = new java.util.HashMap<>();
         if (!peerIds.isEmpty()) {
             List<User> peers = userMapper.selectList(
                     new LambdaQueryWrapper<User>().in(User::getUserId, peerIds));
             for (User u : peers) {
-                idToName.put(u.getUserId(), u.getUsername());
+                peerMap.put(u.getUserId(), u);
             }
         }
 
         List<ConversationListDto.ConversationItem> items = new ArrayList<>();
         for (Message m : lastByConv.values()) {
             String peer = m.getSenderId().equals(userId) ? m.getReceiverId() : m.getSenderId();
+            User peerUser = peerMap.get(peer);
             ConversationListDto.ConversationItem item = new ConversationListDto.ConversationItem();
             item.setConversationId(m.getConversationId());
             item.setPeerUserId(peer);
-            item.setPeerUsername(idToName.getOrDefault(peer, peer));
+            item.setPeerUsername(peerUser != null ? peerUser.getUsername() : peer);
+            item.setPeerAvatar(peerUser != null ? peerUser.getAvatarUrl() : null);
             item.setLastMessage(m.getContent());
             item.setLastTime(m.getServerTime());
             item.setLastSeq(m.getSeq());
