@@ -8,7 +8,7 @@ const { ImClient } = require('./client-core');
 
 let acks = 0;
 const client = new ImClient({
-  host: '127.0.0.1', port: 9999,
+  host: '127.0.0.1', port: 19001,
   token: 'test-token-123', deviceId: 'D-dup', deviceType: 'desktop',
   handlers: {
     onConnected: () => {

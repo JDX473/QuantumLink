@@ -1,7 +1,7 @@
 /**
  * 跨节点投递验证:
  * 1. 调调度接口拿节点列表
- * 2. 用户A 连 9999,用户B 连 9998(不同节点)
+ * 2. 用户A 连 19001,用户B 连 19002(不同节点)
  * 3. A 发消息给 B → 验证跨节点 MQ tag 精准投递,B 能收到
  *
  * 用法: node verify-cross-node.js
@@ -20,7 +20,7 @@ async function login(username, password) {
 async function main() {
   // 1. 调度接口(新接口:服务端最少连接决策,返回单个节点)
   const dispatch = await (await fetch(API + '/api/connects')).json();
-  console.log('调度接口最少连接节点:', dispatch.address, '(本脚本强制连 9999/9998 验证跨节点)');
+  console.log('调度接口最少连接节点:', dispatch.address, '(本脚本强制连 19001/19002 验证跨节点)');
 
   // 2. 登录两个用户
   const a = await login('crossnodeA', 'pass123');
@@ -31,17 +31,17 @@ async function main() {
   const b2 = await login('crossnodeB', 'pass123');
   console.log(`A: ${a2.userId}  B: ${b2.userId}`);
 
-  // 3. A 连 9999,B 连 9998(强制不同节点)
+  // 3. A 连 19001,B 连 19002(强制不同节点)
   let done = false;
   const ca = new ImClient({
-    host: '127.0.0.1', port: 9999, token: a2.token, deviceId: a2.deviceId, deviceType: 'desktop',
-    handlers: { onConnected: (uid) => console.log('[A] 已连 9999, userId=', uid) },
+    host: '127.0.0.1', port: 19001, token: a2.token, deviceId: a2.deviceId, deviceType: 'desktop',
+    handlers: { onConnected: (uid) => console.log('[A] 已连 19001, userId=', uid) },
   });
   const cb = new ImClient({
-    host: '127.0.0.1', port: 9998, token: b2.token, deviceId: b2.deviceId, deviceType: 'desktop',
+    host: '127.0.0.1', port: 19002, token: b2.token, deviceId: b2.deviceId, deviceType: 'desktop',
     handlers: {
       onConnected: (uid) => {
-        console.log('[B] 已连 9998, userId=', uid);
+        console.log('[B] 已连 19002, userId=', uid);
         console.log('[A] 发消息给 B(跨节点)...');
         ca.sendMessage({ receiverId: b2.userId, msgType: 'TEXT', content: '跨节点消息测试', clientTime: Date.now() });
       },

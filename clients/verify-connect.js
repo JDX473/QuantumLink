@@ -6,7 +6,7 @@ const { ImClient } = require('./client-core');
 
 const client = new ImClient({
   host: '127.0.0.1',
-  port: 9999,
+  port: 19001,
   token: 'test-token-123',
   deviceId: 'D-verify',
   deviceType: 'desktop',

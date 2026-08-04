@@ -1,10 +1,10 @@
 /**
  * 最少连接调度验证:
- * 1. 3 个用户连 9999(挂 3 条连接)→ 调度接口应返回 9998(连接数 0 < 3)
- * 2. 4 个用户连 9998(9999=3, 9998=4)→ 调度接口应切回 9999(3 < 4)
+ * 1. 3 个用户连 19001(挂 3 条连接)→ 调度接口应返回 19002(连接数 0 < 3)
+ * 2. 4 个用户连 19002(19001=3, 19002=4)→ 调度接口应切回 19001(3 < 4)
  *
  * 验证"服务端最少连接决策"真的在比较各节点实时连接数。
- * 依赖:Nacos(8850)+ Redis + chat(8081)+ connect(9999/9998)运行中。
+ * 依赖:Nacos(8850)+ Redis + chat(8081)+ connect(19001/19002)运行中。
  *
  * 用法: node verify-lb.js
  */
@@ -55,31 +55,31 @@ async function main() {
   const users = [];
   for (const n of names) users.push(await registerOrLogin(n, 'pass123'));
 
-  // 1. 3 个用户连 9999,9998 空着
-  console.log('[1] 3 个用户连 9999...');
-  for (let i = 0; i < 3; i++) await connectTo('127.0.0.1', 9999, users[i]);
+  // 1. 3 个用户连 19001,19002 空着
+  console.log('[1] 3 个用户连 19001...');
+  for (let i = 0; i < 3; i++) await connectTo('127.0.0.1', 19001, users[i]);
   await sleep(3000); // 等连接数上报(1s 心跳)
 
   let d = await dispatch();
   console.log(`[1] 调度结果: address=${d.address} connections=${d.connections}`);
-  if (d.address !== '127.0.0.1:9998') {
-    console.error(`FAIL: 9999 挂 3 条,期望调度到 9998,实际 ${d.address}`);
+  if (d.address !== '127.0.0.1:19002') {
+    console.error(`FAIL: 19001 挂 3 条,期望调度到 19002,实际 ${d.address}`);
     process.exit(1);
   }
-  console.log('  ✓ 最少连接选到 9998(连接数 0 < 3)');
+  console.log('  ✓ 最少连接选到 19002(连接数 0 < 3)');
 
-  // 2. 4 个用户连 9998 → 9998=4 > 9999=3,应切回 9999
-  console.log('[2] 4 个用户连 9998...');
-  for (let i = 3; i < 7; i++) await connectTo('127.0.0.1', 9998, users[i]);
+  // 2. 4 个用户连 19002 → 19002=4 > 19001=3,应切回 19001
+  console.log('[2] 4 个用户连 19002...');
+  for (let i = 3; i < 7; i++) await connectTo('127.0.0.1', 19002, users[i]);
   await sleep(3000);
 
   d = await dispatch();
   console.log(`[2] 调度结果: address=${d.address} connections=${d.connections}`);
-  if (d.address !== '127.0.0.1:9999') {
-    console.error(`FAIL: 9999=3 < 9998=4,期望调度到 9999,实际 ${d.address}`);
+  if (d.address !== '127.0.0.1:19001') {
+    console.error(`FAIL: 19001=3 < 19002=4,期望调度到 19001,实际 ${d.address}`);
     process.exit(1);
   }
-  console.log('  ✓ 最少连接切回 9999(3 < 4)');
+  console.log('  ✓ 最少连接切回 19001(3 < 4)');
 
   console.log('=== 最少连接调度验证通过 ===');
   process.exit(0);

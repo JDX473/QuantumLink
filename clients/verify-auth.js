@@ -40,12 +40,12 @@ async function main() {
   console.log('\n=== 握手 + 互通 ===');
   let done = false;
   const alice = new ImClient({
-    host: '127.0.0.1', port: 9999,
+    host: '127.0.0.1', port: 19001,
     token: a.token, deviceId: a.deviceId, deviceType: 'desktop',
     handlers: { onConnected: () => console.log('[alice] 握手成功') },
   });
   const bob = new ImClient({
-    host: '127.0.0.1', port: 9999,
+    host: '127.0.0.1', port: 19001,
     token: b.token, deviceId: b.deviceId, deviceType: 'desktop',
     handlers: {
       onConnected: () => {

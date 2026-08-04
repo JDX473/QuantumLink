@@ -10,7 +10,7 @@ const sentOrder = [];
 const acked = [];
 
 const client = new ImClient({
-  host: '127.0.0.1', port: 9999,
+  host: '127.0.0.1', port: 19001,
   token: 'test-token-123', deviceId: 'D-ord', deviceType: 'desktop',
   handlers: {
     onConnected: () => {

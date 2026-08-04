@@ -134,7 +134,7 @@ ipcMain.handle('connect:start', async (_e, { token, deviceId }) => {
   // 调度接口已由服务端算好最少连接节点,客户端无需感知节点列表
   const dispatchRes = await fetch('http://127.0.0.1:8081/api/connects');
   const dispatch = await dispatchRes.json();
-  const nodeAddr = dispatch.success ? dispatch.address : '127.0.0.1:9999'; // 兜底
+  const nodeAddr = dispatch.success ? dispatch.address : '127.0.0.1:19001'; // 兜底
   const [host, port] = nodeAddr.split(':');
   console.log('[dispatch] 服务端决策节点:', nodeAddr);
 

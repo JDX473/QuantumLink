@@ -11,7 +11,7 @@ let storeReceived = false;
 let deliverReceived = false;
 
 const clientA = new ImClient({
-  host: '127.0.0.1', port: 9999,
+  host: '127.0.0.1', port: 19001,
   token: 'test-token-123', deviceId: 'D-A', deviceType: 'desktop',
   handlers: {
     onConnected: () => {
@@ -35,7 +35,7 @@ const clientA = new ImClient({
 
 let bReady = false;
 const clientB = new ImClient({
-  host: '127.0.0.1', port: 9999,
+  host: '127.0.0.1', port: 19001,
   token: 'test-token-456', deviceId: 'D-B', deviceType: 'desktop',
   handlers: {
     onConnected: () => {
