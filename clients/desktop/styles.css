@@ -43,7 +43,7 @@ html, body {
 
 /* 无边框窗口拖拽区(标题栏) */
 .link-bar { -webkit-app-region: drag; }
-.link-bar button, .link-bar input, .link-bar .light { -webkit-app-region: no-drag; }
+.link-bar button, .link-bar input, .link-bar .light, .link-bar .me-wrap { -webkit-app-region: no-drag; }
 
 .mono { font-family: var(--mono); font-size: 12px; }
 .muted { color: var(--muted); }
@@ -125,11 +125,13 @@ html, body {
 .auth-error { color: var(--alert); font-size: 12px; min-height: 16px; text-align: center; }
 
 /* ============ 主界面布局 ============ */
-#main-view { flex-direction: column; align-items: stretch; padding: 0; }
+#main-view { flex-direction: column; align-items: stretch; padding: 0; justify-content: flex-start; }
 
 .link-bar {
   height: 44px;
-  padding: 0 16px;
+  padding: 0 16px 0 16px;
+  /* 右侧留出 titleBarOverlay 系统按钮空间(最小化/最大化/关闭,约 138px) */
+  padding-right: 140px;
   display: flex; align-items: center; justify-content: space-between;
   background: var(--ink);
   border-bottom: 1px solid var(--line);
@@ -141,6 +143,14 @@ html, body {
 @keyframes pulse { 50% { opacity: 0.4; } }
 .link-text { font-size: 12px; color: var(--muted); font-weight: 500; }
 .link-meta { display: flex; align-items: center; gap: 14px; }
+.me-wrap { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.me-wrap:hover .me-avatar { opacity: 0.85; }
+.me-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; transition: opacity 0.15s; }
+.me-avatar-placeholder {
+  background: var(--signal); color: var(--ink);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+}
 
 .app-body { flex: 1; display: flex; min-height: 0; }
 
@@ -156,6 +166,15 @@ html, body {
 .conv-list { flex: 1; overflow-y: auto; padding: 4px 8px; }
 .conv-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 20px 0; }
 
+.conv-item-row { display: flex; align-items: center; gap: 10px; }
+.conv-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: #2A3445; }
+.conv-avatar-placeholder {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--signal); color: var(--ink);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; flex-shrink: 0;
+}
+.conv-item-body { flex: 1; min-width: 0; }
 .conv-item {
   display: flex; flex-direction: column; gap: 3px;
   padding: 10px 10px;
@@ -193,6 +212,7 @@ html, body {
 .message {
   max-width: 72%;
   display: flex; flex-direction: column;
+  flex: 0 0 auto;                 /* 关键:不随 message-stream 收缩,保持自然高度 */
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel-2);
@@ -206,6 +226,7 @@ html, body {
 
 .msg-head {
   display: flex; align-items: center; gap: 8px;
+  flex: 0 0 auto;
   padding: 6px 10px;
   background: rgba(0,0,0,0.2);
   border-bottom: 1px solid var(--line);
@@ -213,14 +234,23 @@ html, body {
   font-size: 11px;
   color: var(--muted);
 }
+.msg-avatar-wrap { display: inline-flex; }
+.msg-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; background: #2A3445; }
+.msg-avatar-placeholder {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--quantum); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+}
 .msg-sender { color: var(--text); font-weight: 600; }
 .msg-seq { color: var(--quantum); }
 .msg-time { margin-left: auto; }
 
-.msg-body { padding: 9px 12px; font-size: 14px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; }
+.msg-body { padding: 9px 12px; font-size: 14px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; flex: 0 0 auto; }
 
 .msg-foot {
   display: flex; align-items: center; gap: 8px;
+  flex: 0 0 auto;
   padding: 0 10px 7px;
   font-family: var(--mono);
   font-size: 11px;

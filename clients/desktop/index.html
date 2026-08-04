@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:*">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:*; img-src 'self' http://127.0.0.1:* data:">
   <title>QuantumLink</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -33,6 +33,10 @@
         <span class="field-label">密码</span>
         <input id="password" class="input" type="password" placeholder="••••••••" autocomplete="current-password">
       </label>
+      <label class="field" id="avatar-field" style="display:none">
+        <span class="field-label">头像(可选)</span>
+        <input id="avatar-file" class="input" type="file" accept="image/*">
+      </label>
       <button id="auth-submit" class="btn btn-primary" type="submit">连接</button>
       <p id="auth-error" class="auth-error"></p>
     </form>
@@ -48,9 +52,14 @@
       <span id="link-text" class="link-text">未连接</span>
     </div>
     <div class="link-meta">
-      <span id="link-user" class="mono"></span>
+      <div class="me-wrap" title="点击修改头像">
+        <img id="me-avatar" class="me-avatar" alt="我的头像">
+        <span id="me-avatar-fallback" class="me-avatar me-avatar-placeholder">?</span>
+        <span id="link-user" class="mono"></span>
+      </div>
       <span id="link-uptime" class="mono muted"></span>
       <button id="btn-logout" class="btn btn-ghost btn-sm">断开</button>
+      <input id="me-avatar-file" type="file" accept="image/*" style="display:none">
     </div>
   </header>
 

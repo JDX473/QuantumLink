@@ -27,3 +27,11 @@ rocketmq:
   topics:
     upstream: client2server     # connect → chat(上行)
     downstream: server2client   # chat → connect(下行)
+
+# MinIO 对象存储(头像)
+# 注意:key 用 accessKey/secretKey(不用 access-key),避免与系统环境变量 MINIO_ACCESS_KEY 冲突
+minio:
+  endpoint: http://127.0.0.1:9000
+  accessKey: minioadmin
+  secretKey: minioadmin
+  bucket: avatar

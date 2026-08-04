@@ -3,21 +3,16 @@ package com.quantumlink.im.chat.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.quantumlink.im.chat.entity.User;
 import com.quantumlink.im.chat.mapper.UserMapper;
+import com.quantumlink.im.chat.service.AvatarStorageService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 用户查询接口。
- *
- * <p>提供"用户名 → userId"解析:聊天时用户填的是用户名(可变、好记),
- * 前端调此接口解析成 userId(不变、服务端分配的稳定身份)再发送。
- * 整个消息链路仍以 userId 为身份锚点,用户改名不影响历史消息/会话/设备。
+ * 用户接口:查询、改头像。
  */
 @RestController
 @RequestMapping("/api/users")
@@ -25,12 +20,13 @@ import java.util.Map;
 public class UserController {
 
     private final UserMapper userMapper;
+    private final AvatarStorageService avatarStorageService;
 
     /**
      * 按用户名解析用户。
      *
      * @param username 用户名(可变,对外可见)
-     * @return { success, userId, username };不存在时 success=false
+     * @return { success, userId, username, avatarUrl };不存在时 success=false
      */
     @GetMapping("/resolve")
     public Map<String, Object> resolve(@RequestParam("username") String username) {
@@ -45,6 +41,43 @@ public class UserController {
         resp.put("success", true);
         resp.put("userId", user.getUserId());
         resp.put("username", user.getUsername());
+        resp.put("avatarUrl", user.getAvatarUrl());
         return resp;
+    }
+
+    /**
+     * 修改头像:上传文件 → 存 MinIO → 更新用户 avatar_url。
+     *
+     * @param userId 用户 ID
+     * @param file   头像文件
+     * @return { success, avatarUrl }
+     */
+    @PostMapping("/{userId}/avatar")
+    public Map<String, Object> updateAvatar(
+            @PathVariable("userId") String userId,
+            @RequestParam("file") MultipartFile file) {
+        Map<String, Object> resp = new HashMap<>();
+        try {
+            if (file == null || file.isEmpty()) {
+                resp.put("success", false);
+                resp.put("message", "file required");
+                return resp;
+            }
+            String avatarUrl = avatarStorageService.uploadAvatar(userId, file.getBytes(), file.getContentType());
+            // 更新用户表
+            User user = userMapper.selectOne(
+                    new LambdaQueryWrapper<User>().eq(User::getUserId, userId));
+            if (user != null) {
+                user.setAvatarUrl(avatarUrl);
+                userMapper.updateById(user);
+            }
+            resp.put("success", true);
+            resp.put("avatarUrl", avatarUrl);
+            return resp;
+        } catch (Exception e) {
+            resp.put("success", false);
+            resp.put("message", "upload failed: " + e.getMessage());
+            return resp;
+        }
     }
 }

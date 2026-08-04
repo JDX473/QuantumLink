@@ -3,8 +3,10 @@ package com.quantumlink.im.chat.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.quantumlink.im.chat.entity.Conversation;
 import com.quantumlink.im.chat.entity.Message;
+import com.quantumlink.im.chat.entity.User;
 import com.quantumlink.im.chat.mapper.ConversationMapper;
 import com.quantumlink.im.chat.mapper.MessageMapper;
+import com.quantumlink.im.chat.mapper.UserMapper;
 import com.quantumlink.im.chat.mq.DownstreamProducer;
 import com.quantumlink.im.common.protocol.AckPayload;
 import com.quantumlink.im.common.protocol.AckType;
@@ -49,6 +51,7 @@ public class MessageService {
 
     private final MessageMapper messageMapper;
     private final ConversationMapper conversationMapper;
+    private final UserMapper userMapper;
     private final StringRedisTemplate redisTemplate;
     private final DownstreamProducer downstreamProducer;
 
@@ -132,16 +135,32 @@ public class MessageService {
             // ② 回 ACK-STORE 给发送方
             sendStoreAck(payload, message.getId(), seq);
 
-            // ③ 下行推送:把 serverMsgId + seq 填回 payload,接收方据此排序
+            // ③ 下行推送:把 serverMsgId + seq + 发送者资料填回 payload
+            //    senderName/senderAvatar 供 UI 显示(头像+名字),不暴露 userId
             payload.setServerMsgId(message.getId());
             payload.setSeq(seq);
             payload.setServerTime(message.getServerTime());
+            fillSenderProfile(payload);
             downstreamProducer.sendEnvelope(
                     payload.getReceiverId(), null,
                     DownstreamEnvelope.TYPE_MSG, payload);
         } catch (Exception e) {
             log.error("async process error: conv={} clientMsgId={}",
                     payload.getConversationId(), payload.getClientMsgId(), e);
+        }
+    }
+
+    /** 填充发送者用户名 + 头像(用于 UI 显示,不暴露 userId) */
+    private void fillSenderProfile(MessagePayload payload) {
+        try {
+            User sender = userMapper.selectOne(
+                    new LambdaQueryWrapper<User>().eq(User::getUserId, payload.getSenderId()));
+            if (sender != null) {
+                payload.setSenderName(sender.getUsername());
+                payload.setSenderAvatar(sender.getAvatarUrl());
+            }
+        } catch (Exception e) {
+            log.warn("fill sender profile failed: sender={}", payload.getSenderId(), e);
         }
     }
 

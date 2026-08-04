@@ -55,7 +55,7 @@ ipcMain.handle('auth:login', async (_e, { username, password, deviceType }) => {
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.message || 'login failed');
-  return { token: data.token, deviceId: data.deviceId, userId: data.userId };
+  return { token: data.token, deviceId: data.deviceId, userId: data.userId, username: data.username, avatarUrl: data.avatarUrl };
 });
 
 /** 注册 */
@@ -70,11 +70,46 @@ ipcMain.handle('auth:register', async (_e, { username, password }) => {
   return data;
 });
 
+/** 注册(带头像,multipart 上传) */
+ipcMain.handle('auth:register-with-avatar', async (_e, { username, password, fileData, fileName, mimeType }) => {
+  const fd = new FormData();
+  fd.append('username', username);
+  fd.append('password', password);
+  // 把 base64 解码成二进制
+  const buf = Buffer.from(fileData, 'base64');
+  const blob = new Blob([buf], { type: mimeType || 'image/png' });
+  fd.append('file', blob, fileName || 'avatar.png');
+
+  const res = await fetch('http://127.0.0.1:8081/api/auth/register/avatar', {
+    method: 'POST',
+    body: fd,
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || 'register failed');
+  return data;
+});
+
 /** 用户名 → userId 解析(聊天时填用户名,解析成 userId 再发) */
 ipcMain.handle('users:resolve', async (_e, { username }) => {
   const res = await fetch(`http://127.0.0.1:8081/api/users/resolve?username=${encodeURIComponent(username)}`);
   const data = await res.json();
   if (!data.success) throw new Error(data.message || 'resolve failed');
+  return data;
+});
+
+/** 修改头像(multipart 上传) */
+ipcMain.handle('users:update-avatar', async (_e, { userId, fileData, fileName, mimeType }) => {
+  const fd = new FormData();
+  const buf = Buffer.from(fileData, 'base64');
+  const blob = new Blob([buf], { type: mimeType || 'image/png' });
+  fd.append('file', blob, fileName || 'avatar.png');
+
+  const res = await fetch(`http://127.0.0.1:8081/api/users/${encodeURIComponent(userId)}/avatar`, {
+    method: 'POST',
+    body: fd,
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || 'upload failed');
   return data;
 });
 

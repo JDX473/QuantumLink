@@ -39,6 +39,7 @@ public class AuthService {
     private final UserMapper userMapper;
     private final DeviceMapper deviceMapper;
     private final StringRedisTemplate redisTemplate;
+    private final AvatarStorageService avatarStorageService;
 
     /** token 有效期:30 天 */
     private static final long TOKEN_TTL_SECONDS = 30L * 24 * 3600;
@@ -46,9 +47,13 @@ public class AuthService {
     /**
      * 注册新用户。
      *
+     * @param username    用户名
+     * @param password    密码
+     * @param avatarData  头像字节(可为 null)
+     * @param avatarType 头像 MIME 类型(可为 null)
      * @return 分配的 user_id;用户名已存在返回 null
      */
-    public String register(String username, String password) {
+    public String register(String username, String password, byte[] avatarData, String avatarType) {
         // 校验用户名唯一
         Long count = userMapper.selectCount(
                 new LambdaQueryWrapper<User>().eq(User::getUsername, username));
@@ -65,6 +70,13 @@ public class AuthService {
         user.setUsername(username);
         user.setPasswordHash(salt + ":" + passwordHash);
         user.setCreatedAt(LocalDateTime.now());
+
+        // 注册时可选上传头像
+        if (avatarData != null && avatarData.length > 0) {
+            String avatarUrl = avatarStorageService.uploadAvatar(user.getUserId(), avatarData, avatarType);
+            user.setAvatarUrl(avatarUrl);
+        }
+
         userMapper.insert(user);
         log.info("user registered: userId={} username={}", user.getUserId(), username);
         return user.getUserId();
@@ -118,6 +130,8 @@ public class AuthService {
         resp.setToken(token);
         resp.setDeviceId(deviceId);
         resp.setUserId(user.getUserId());
+        resp.setUsername(user.getUsername());
+        resp.setAvatarUrl(user.getAvatarUrl());
         log.info("login ok: userId={} deviceId={}", user.getUserId(), deviceId);
         return resp;
     }

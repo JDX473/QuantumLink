@@ -25,5 +25,8 @@ public class User {
     /** 密码哈希(不存明文) */
     private String passwordHash;
 
+    /** 头像 URL(MinIO) */
+    private String avatarUrl;
+
     private LocalDateTime createdAt;
 }

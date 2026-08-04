@@ -10,9 +10,12 @@ contextBridge.exposeInMainWorld('quantumlink', {
   // 认证
   login: (creds) => ipcRenderer.invoke('auth:login', creds),
   register: (creds) => ipcRenderer.invoke('auth:register', creds),
+  registerWithAvatar: (creds) => ipcRenderer.invoke('auth:register-with-avatar', creds),
 
   // 用户解析(用户名 → userId)
   resolveUser: (info) => ipcRenderer.invoke('users:resolve', info),
+  // 修改头像
+  updateAvatar: (info) => ipcRenderer.invoke('users:update-avatar', info),
 
   // 会话
   listConversations: (info) => ipcRenderer.invoke('convs:list', info),

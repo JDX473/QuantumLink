@@ -29,6 +29,9 @@ public class ConversationListDto {
         /** 对方用户名(对外显示) */
         private String peerUsername;
 
+        /** 对方头像 URL(UI 显示) */
+        private String peerAvatar;
+
         /** 最后一条消息内容(预览) */
         private String lastMessage;
 
