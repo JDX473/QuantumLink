@@ -18,7 +18,7 @@ const [,, token = 'test-token-123', deviceId = 'D-1', deviceType = 'desktop'] = 
 
 const client = new ImClient({
   host: '127.0.0.1',
-  port: 9999,
+  port: 19001,
   token,
   deviceId,
   deviceType,

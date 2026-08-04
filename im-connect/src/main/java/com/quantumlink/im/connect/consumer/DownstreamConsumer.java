@@ -39,7 +39,13 @@ public class DownstreamConsumer {
     private final DefaultMQPushConsumer consumer;
 
     public DownstreamConsumer(ConnectConfig config, String nodeId) {
-        this.consumer = new DefaultMQPushConsumer("im-connect-consumer");
+        // 每个节点用独立的 consumer group(group 名带 nodeId——冒号/点替换为下划线,
+        // RocketMQ group 名只允许 [%|a-zA-Z0-9_-])。
+        // 若所有节点共用同一 group,RocketMQ 会在 group 内做消息负载均衡(分摊),
+        // 导致"发给 B 节点的消息被 A 节点消费"——而 A 节点本地没有 B 的 channel,
+        // 消息被丢弃。独立 group 保证每条 tag 消息只被对应节点消费。
+        this.consumer = new DefaultMQPushConsumer(
+                "im-connect-consumer-" + nodeId.replaceAll("[:.]", "_"));
         this.consumer.setNamesrvAddr(config.namesrvAddr);
         try {
             // 水平扩展:只订阅本节点的 tag。chat 发下行时按目标节点 nodeId 打 tag,

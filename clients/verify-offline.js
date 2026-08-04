@@ -17,14 +17,14 @@ function log(...args) { console.log(`[offline]`, ...args); }
 
 // A:发送方
 const clientA = new ImClient({
-  host: '127.0.0.1', port: 9999,
+  host: '127.0.0.1', port: 19001,
   token: 'test-token-123', deviceId: 'D-A', deviceType: 'desktop',
   handlers: {
     onConnected: () => {
       log('A 已连接');
       // B 也连上
       B = new ImClient({
-        host: '127.0.0.1', port: 9999,
+        host: '127.0.0.1', port: 19001,
         token: 'test-token-456', deviceId: 'D-B', deviceType: 'desktop',
         handlers: {
           onConnected: () => {
@@ -72,7 +72,7 @@ function reconnectB() {
   if (reconnected) return;
   reconnected = true;
   const newB = new ImClient({
-    host: '127.0.0.1', port: 9999,
+    host: '127.0.0.1', port: 19001,
     token: 'test-token-456', deviceId: 'D-B', deviceType: 'desktop',
     handlers: {
       onConnected: () => {

@@ -13,7 +13,7 @@ let confirmed = 0;
 let failed = 0;
 
 const client = new ImClient({
-  host: '127.0.0.1', port: 9999,
+  host: '127.0.0.1', port: 19001,
   token: 'test-token-123', deviceId: 'D-retry', deviceType: 'desktop',
   handlers: {
     onConnected: (userId) => {

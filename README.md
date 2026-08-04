@@ -101,6 +101,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - **2026-08-04(合并到 master)**:桌面端消息显示修复、头像功能等 dev 验证通过的功能合并到 master。
 - **2026-08-04(水平扩展:多节点 + MQ tag 精准投递)**:去掉 gateway(两倍连接不划算),客户端直连。**架构**:多 connect 节点各自订阅自己的 MQ tag;Redis 会话表存 `userId#deviceId → nodeId`;chat 发下行时查会话表定位目标节点 → 打 nodeId tag 投 `server2client` → 只有目标节点消费(Broker 端过滤,非目标节点零开销)。新增 `GET /api/connects` 调度接口(返回节点列表,客户端随机直连);客户端连接前调调度接口选节点。**验证**:2 个 connect(9999/9998),A 连 9999、B 连 9998,互发消息跨节点到达;im-chat 日志显示 ACK 打 tag 9999、MSG 打 tag 9998,各自只被对应节点消费。
 - **2026-08-04(最少连接负载均衡 + Nacos 服务发现)**:调度从"静态节点列表 + 客户端随机"升级为**服务端最少连接决策**。connect 启动注册 Nacos 服务 `im-connect`(动态发现 + 健康检查),每 1s 把本地连接数 `ChannelManager.size()` SETEX 到 Redis `im:node:conns:{nodeId}`(TTL 3s);chat 调度接口 = Nacos 健康实例 × Redis 实时连接数 → 返回连接最少的节点,客户端照单直连(节点列表对客户端透明)。**三层职责分离**:Nacos(实例存在性)/ 会话表(消息路由)/ 连接数心跳(负载指标)。**验证**:verify-lb(3 条连 9999 → 选 9998;再 4 条连 9998 → 切回 9999)、杀 9998 自动摘除、跨节点互聊回归通过。**Nacos 本机端口**:server.port=8850(本机 7848 被 wpspdf 占用,JRaft 端口 = server.port-1000,整体偏移)。
+- **2026-08-04(修复:多节点下行丢消息——consumer group 共享)**:多 connect 节点共用同一个 RocketMQ consumer group(`im-connect-consumer`),导致"发给 B 节点的消息被 A 节点消费后丢弃"。**根因**:同一 group 内队列被分摊,消息落错队列 → 目标节点够不到;虽然 broker 按 tag 过滤,但过滤发生在"消费者拉取时",而"谁持有队列"由 group 决定。**修复**:每个节点独立 consumer group(group 名带 nodeId,`:`/`.` 转 `_` 符合 RocketMQ 命名规范)——单消费者独享全部队列,必能拉到自己的 tag。**端口变更**:connect 端口 9999/9998 → 19001/19002(999x 落在 Windows 动态端口范围 1024-15000 内,可能被系统出站连接占用冲突)。**验证**:verify-lb 最少连接 + verify-cross-node 跨节点互聊全部通过。
 
 ## 分支
 

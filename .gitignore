@@ -24,3 +24,7 @@ logs/
 # 本地环境/敏感配置
 .env
 application-local.yml
+
+# 运行时临时日志
+/tmp-*.log
+/tmp-*.err

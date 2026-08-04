@@ -9,7 +9,7 @@ const { ImClient } = require('./client-core');
 // 两个客户端,不同 token 对应不同 user_id(需在 Redis 预置 token)
 // 这里假设 user-A 用 test-token-123,user-B 用 test-token-456
 const clientA = new ImClient({
-  host: '127.0.0.1', port: 9999,
+  host: '127.0.0.1', port: 19001,
   token: 'test-token-123', deviceId: 'D-A', deviceType: 'desktop',
   handlers: {
     onConnected: (userId) => console.log(`[A] 已连接 userId=${userId}`),
@@ -20,7 +20,7 @@ const clientA = new ImClient({
 });
 
 const clientB = new ImClient({
-  host: '127.0.0.1', port: 9999,
+  host: '127.0.0.1', port: 19001,
   token: 'test-token-456', deviceId: 'D-B', deviceType: 'desktop',
   handlers: {
     onConnected: (userId) => {

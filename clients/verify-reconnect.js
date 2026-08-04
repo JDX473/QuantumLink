@@ -11,7 +11,7 @@ let confirmed = false;
 let resendSeen = false;
 
 const client = new ImClient({
-  host: '127.0.0.1', port: 9999,
+  host: '127.0.0.1', port: 19001,
   token: 'test-token-123', deviceId: 'D-reconn', deviceType: 'desktop',
   handlers: {
     onConnected: () => {
