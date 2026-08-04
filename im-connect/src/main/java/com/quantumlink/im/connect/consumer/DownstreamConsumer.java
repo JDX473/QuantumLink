@@ -72,18 +72,24 @@ public class DownstreamConsumer {
     private void handle(MessageExt msg) {
         String json = new String(msg.getBody(), StandardCharsets.UTF_8);
         DownstreamEnvelope envelope = JsonUtil.fromJson(json, DownstreamEnvelope.class);
-        if (envelope == null || envelope.getTo() == null) {
+        boolean hasTargets = envelope != null && envelope.getTargets() != null && !envelope.getTargets().isEmpty();
+        if (envelope == null || (envelope.getTo() == null && !hasTargets)) {
             log.warn("bad downstream envelope, skip");
             return;
         }
 
-        // 定位目标连接
-        Collection<Channel> channels;
-        if (envelope.getDeviceId() != null) {
+        // 定位目标连接:单播(to)或群播(targets)
+        Collection<Channel> channels = new java.util.ArrayList<>();
+        if (envelope.getTargets() != null && !envelope.getTargets().isEmpty()) {
+            // 群播:遍历该节点上的目标成员,每个用户的所有在线设备都推(多端全推)
+            for (String uid : envelope.getTargets()) {
+                channels.addAll(ChannelManager.getAll(uid));
+            }
+        } else if (envelope.getDeviceId() != null) {
             Channel ch = ChannelManager.get(envelope.getTo(), envelope.getDeviceId());
-            channels = ch == null ? java.util.Collections.emptyList() : java.util.Collections.singletonList(ch);
+            if (ch != null) channels.add(ch);
         } else {
-            channels = ChannelManager.getAll(envelope.getTo());
+            channels.addAll(ChannelManager.getAll(envelope.getTo()));
         }
 
         if (channels.isEmpty()) {

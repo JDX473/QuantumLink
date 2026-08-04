@@ -15,6 +15,7 @@ let currentUser = null;        // 当前登录的 userId
 let currentUsername = null;    // 当前登录的用户名
 let currentAvatar = null;      // 当前登录的头像 URL
 let currentConv = null;        // 当前会话 conversationId
+let currentConvIsGroup = false; // 当前会话是否为群
 let convMessages = new Map();  // conversationId → { messages: [] }
 
 // ---- 视图切换 ----
@@ -145,17 +146,42 @@ api.onConnectionStatus(({ status, userId }) => {
   else if (status === 'closed') setLinkStatus('', '连接已断开');
 });
 
-// ---- 会话列表 ----
+// ---- 会话列表(单聊 + 群)----
 async function loadConversations() {
-  const data = await api.listConversations({ userId: currentUser });
+  const [data, groups] = await Promise.all([
+    api.listConversations({ userId: currentUser }),
+    api.listGroups({ userId: currentUser }),
+  ]);
   const list = $('#conv-list');
   list.innerHTML = '';
 
-  if (!data.conversations || data.conversations.length === 0) {
+  if ((!data.conversations || data.conversations.length === 0) && (!groups.groups || groups.groups.length === 0)) {
     list.innerHTML = '<div class="conv-empty">还没有会话,点 ＋ 发起新会话</div>';
     return;
   }
 
+  // 群会话(群名 + 群成员数)
+  for (const g of (groups.groups || [])) {
+    const item = document.createElement('div');
+    item.className = 'conv-item';
+    item.dataset.convId = g.groupId;
+    item.dataset.isGroup = '1';
+    item.innerHTML = `
+      <div class="conv-item-row">
+        <span class="conv-avatar conv-avatar-placeholder">群</span>
+        <div class="conv-item-body">
+          <div class="conv-item-top">
+            <span class="conv-item-name">${escapeHtml(g.name)}</span>
+          </div>
+          <div class="conv-item-preview">群聊</div>
+        </div>
+      </div>
+    `;
+    item.addEventListener('click', () => openConversation(g.groupId, null, g.name, true));
+    list.appendChild(item);
+  }
+
+  // 单聊会话
   for (const conv of data.conversations) {
     const item = document.createElement('div');
     item.className = 'conv-item';
@@ -176,15 +202,16 @@ async function loadConversations() {
         </div>
       </div>
     `;
-    item.addEventListener('click', () => openConversation(conv.conversationId, conv.peerUserId, conv.peerUsername));
+    item.addEventListener('click', () => openConversation(conv.conversationId, conv.peerUserId, conv.peerUsername, false));
     list.appendChild(item);
   }
 }
 
-// ---- 打开会话 ----
-async function openConversation(conversationId, peerUserId, peerUsername) {
+// ---- 打开会话(单聊 / 群)----
+async function openConversation(conversationId, peerUserId, peerUsername, isGroup) {
   currentConv = conversationId;
-  $('#conv-title').textContent = peerUsername || peerUserId;
+  currentConvIsGroup = !!isGroup;
+  $('#conv-title').textContent = peerUsername || peerUserId || '群聊';
   $('#message-stream').innerHTML = '';
 
   // 高亮选中
@@ -192,7 +219,9 @@ async function openConversation(conversationId, peerUserId, peerUsername) {
     el.classList.toggle('active', el.dataset.convId === conversationId));
 
   // 增量拉取该会话所有消息(从 seq=0 开始,MVP 简单拉全量)
-  const data = await api.pullMessages({ conversationId, afterSeq: 0 });
+  const data = isGroup
+    ? await api.pullGroupMessages({ groupId: conversationId, afterSeq: 0 })
+    : await api.pullMessages({ conversationId, afterSeq: 0 });
   for (const m of (data.messages || [])) {
     // 根据消息实际状态渲染:SENT=已存储 / DELIVERED=对方已送达
     // (不能固定 delivered,否则给离线用户发的消息也会显示"已送达")
@@ -324,14 +353,19 @@ function send() {
   const content = $('#composer-input').value;
   if (!content || !currentConv) return;
 
-  // 从当前会话解析接收方 userId
-  const [a, b] = currentConv.split('#');
-  const receiverId = a === currentUser ? b : a;
+  // 群聊:receiverId/conversationId 都是群 id;单聊:从会话解析对方 userId
+  let receiverId;
+  if (currentConvIsGroup) {
+    receiverId = currentConv;
+  } else {
+    const [a, b] = currentConv.split('#');
+    receiverId = a === currentUser ? b : a;
+  }
 
   const msg = { senderId: currentUser, senderAvatar: currentAvatar, receiverId, content, clientTime: Date.now() };
   const el = renderMessage(msg, 'sending');
 
-  api.send({ receiverId, content, msgType: 'TEXT' })
+  api.send({ receiverId, conversationId: currentConv, content, msgType: 'TEXT' })
     .then((cmid) => { if (cmid) el.dataset.clientMsgId = cmid; })
     .catch(() => updateMessageStatus(el, 'failed'));
 
@@ -377,6 +411,34 @@ $('#btn-new-conv-ok').addEventListener('click', async () => {
 // Enter 触发
 $('#new-conv-username').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('#btn-new-conv-ok').click();
+});
+
+// 创建群:群名 + 成员用户名(逗号分隔,逐个 resolve 成 userId)
+$('#btn-new-group-ok').addEventListener('click', async () => {
+  const name = $('#new-group-name').value.trim();
+  const membersText = $('#new-group-members').value.trim();
+  const err = $('#new-conv-error');
+  if (!name) { err.textContent = '请输入群名'; return; }
+  try {
+    const memberIds = [];
+    if (membersText) {
+      for (const uname of membersText.split(/[,，]/).map(s => s.trim()).filter(Boolean)) {
+        const resolved = await api.resolveUser({ username: uname });
+        if (!resolved.success) { err.textContent = '成员不存在: ' + uname; return; }
+        memberIds.push(resolved.userId);
+      }
+    }
+    const created = await api.createGroup({ name, ownerId: currentUser, members: memberIds });
+    if (!created.success) { err.textContent = created.message || '建群失败'; return; }
+    $('#new-conv-modal').classList.add('hidden');
+    $('#new-group-name').value = '';
+    $('#new-group-members').value = '';
+    await loadConversations();
+    await openConversation(created.groupId, null, created.name, true);
+    $('#composer-input').focus();
+  } catch (ex) {
+    err.textContent = ex.message || '建群失败';
+  }
 });
 
 // 断开
