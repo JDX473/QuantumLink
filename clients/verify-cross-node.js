@@ -18,11 +18,7 @@ async function login(username, password) {
 }
 
 async function main() {
-  // 1. 调度接口(新接口:服务端最少连接决策,返回单个节点)
-  const dispatch = await (await fetch(API + '/api/connects')).json();
-  console.log('调度接口最少连接节点:', dispatch.address, '(本脚本强制连 19001/19002 验证跨节点)');
-
-  // 2. 登录两个用户
+  // 1. 登录两个用户
   const a = await login('crossnodeA', 'pass123');
   const b = await login('crossnodeB', 'pass123');
   if (!a.success) { await (await fetch(API + '/api/auth/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username:'crossnodeA',password:'pass123'}) })).json(); }
@@ -30,6 +26,10 @@ async function main() {
   const a2 = await login('crossnodeA', 'pass123');
   const b2 = await login('crossnodeB', 'pass123');
   console.log(`A: ${a2.userId}  B: ${b2.userId}`);
+
+  // 1.5 调度接口(新接口:服务端最少连接决策,返回单个节点;需鉴权)
+  const dispatch = await (await fetch(API + '/api/connects', { headers: { Authorization: 'Bearer ' + a2.token } })).json();
+  console.log('调度接口最少连接节点:', dispatch.address, '(本脚本强制连 19001/19002 验证跨节点)');
 
   // 3. A 连 19001,B 连 19002(强制不同节点)
   let done = false;

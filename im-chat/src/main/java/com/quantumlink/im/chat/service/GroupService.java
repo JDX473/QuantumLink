@@ -109,6 +109,15 @@ public class GroupService {
         return removed > 0;
     }
 
+    /** 是否群成员 */
+    public boolean isMember(String groupId, String userId) {
+        Long count = memberMapper.selectCount(
+                new LambdaQueryWrapper<GroupMember>()
+                        .eq(GroupMember::getGroupId, groupId)
+                        .eq(GroupMember::getUserId, userId));
+        return count != null && count > 0;
+    }
+
     /** 群成员 userId 列表(可变 List,调用方可能做 remove 等修改) */
     public List<String> listMemberIds(String groupId) {
         List<String> ids = new ArrayList<>();

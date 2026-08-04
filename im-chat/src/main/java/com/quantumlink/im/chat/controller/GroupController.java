@@ -1,8 +1,10 @@
 package com.quantumlink.im.chat.controller;
 
+import com.quantumlink.im.chat.config.AuthContext;
 import com.quantumlink.im.chat.dto.GroupMessageItemDto;
 import com.quantumlink.im.chat.entity.Group;
 import com.quantumlink.im.chat.service.GroupService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -24,17 +26,17 @@ public class GroupController {
 
     private final GroupService groupService;
 
-    /** 创建群:name + members(初始成员,群主自动加入) */
+    /** 创建群:name + members(初始成员,群主自动加入);群主从鉴权上下文取 */
     @PostMapping
-    public Map<String, Object> createGroup(@RequestBody Map<String, Object> req) {
+    public Map<String, Object> createGroup(@RequestBody Map<String, Object> req, HttpServletRequest request) {
         String name = (String) req.get("name");
-        String ownerId = (String) req.get("ownerId");
+        String ownerId = AuthContext.currentUserId(request); // 群主 = 当前登录用户,不信任参数
         @SuppressWarnings("unchecked")
         List<String> members = (List<String>) req.getOrDefault("members", List.of());
         Map<String, Object> resp = new HashMap<>();
         if (name == null || ownerId == null) {
             resp.put("success", false);
-            resp.put("message", "name and ownerId required");
+            resp.put("message", "name required");
             return resp;
         }
         Group group = groupService.createGroup(name, ownerId, members);
@@ -69,12 +71,12 @@ public class GroupController {
         return resp;
     }
 
-    /** 我的群列表 */
+    /** 我的群列表(userId 从鉴权上下文取) */
     @GetMapping
-    public Map<String, Object> listGroups(@RequestParam("userId") String userId) {
+    public Map<String, Object> listGroups(HttpServletRequest request) {
         Map<String, Object> resp = new HashMap<>();
         resp.put("success", true);
-        resp.put("groups", groupService.listGroupsByUser(userId));
+        resp.put("groups", groupService.listGroupsByUser(AuthContext.currentUserId(request)));
         return resp;
     }
 
@@ -87,14 +89,21 @@ public class GroupController {
         return resp;
     }
 
-    /** 群消息增量拉取(按 seq,与单聊同构;含发送者资料) */
+    /** 群消息增量拉取(按 seq,与单聊同构;含发送者资料)。越权防护:仅群成员可拉 */
     @GetMapping("/{groupId}/messages")
     public Map<String, Object> pullMessages(
             @PathVariable("groupId") String groupId,
             @RequestParam("afterSeq") long afterSeq,
-            @RequestParam(value = "limit", required = false) Integer limit) {
-        List<GroupMessageItemDto> messages = groupService.pullGroupMessages(groupId, afterSeq, limit);
+            @RequestParam(value = "limit", required = false) Integer limit,
+            HttpServletRequest request) {
         Map<String, Object> resp = new HashMap<>();
+        String userId = AuthContext.currentUserId(request);
+        if (!groupService.isMember(groupId, userId)) {
+            resp.put("success", false);
+            resp.put("message", "forbidden: not a group member");
+            return resp;
+        }
+        List<GroupMessageItemDto> messages = groupService.pullGroupMessages(groupId, afterSeq, limit);
         resp.put("success", true);
         resp.put("messages", messages);
         resp.put("maxSeq", groupService.groupMaxSeq(groupId));

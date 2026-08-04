@@ -150,7 +150,7 @@ api.onConnectionStatus(({ status, userId }) => {
 async function loadConversations() {
   const [data, groups] = await Promise.all([
     api.listConversations({ userId: currentUser }),
-    api.listGroups({ userId: currentUser }),
+    api.listGroups(),
   ]);
   const list = $('#conv-list');
   list.innerHTML = '';
@@ -428,7 +428,7 @@ $('#btn-new-group-ok').addEventListener('click', async () => {
         memberIds.push(resolved.userId);
       }
     }
-    const created = await api.createGroup({ name, ownerId: currentUser, members: memberIds });
+    const created = await api.createGroup({ name, members: memberIds });
     if (!created.success) { err.textContent = created.message || '建群失败'; return; }
     $('#new-conv-modal').classList.add('hidden');
     $('#new-group-name').value = '';
