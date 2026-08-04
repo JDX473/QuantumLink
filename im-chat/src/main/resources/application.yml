@@ -35,3 +35,8 @@ minio:
   accessKey: minioadmin
   secretKey: minioadmin
   bucket: avatar
+
+# Nacos 服务注册中心:connect 启动注册 im-connect 实例,chat 查询做服务发现
+# + 最少连接调度(替代旧的静态 connect.nodes 配置)
+nacos:
+  server-addr: 127.0.0.1:8850

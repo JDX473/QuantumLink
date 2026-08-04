@@ -17,6 +17,9 @@ public class ConnectConfig {
     public String redisHost = "127.0.0.1";
     public int redisPort = 6379;
 
+    /** Nacos(服务注册中心):节点注册到 im-connect 服务,动态发现 + 健康检查 */
+    public String nacosAddr = "127.0.0.1:8850";
+
     /** RocketMQ */
     public String namesrvAddr = "127.0.0.1:9876";
     /** 上行 topic(客户端 → chat) */
@@ -28,6 +31,7 @@ public class ConnectConfig {
         c.namesrvAddr = System.getProperty("im.connect.namesrv", "127.0.0.1:9876");
         c.redisHost = System.getProperty("im.connect.redis.host", "127.0.0.1");
         c.redisPort = Integer.parseInt(System.getProperty("im.connect.redis.port", "6379"));
+        c.nacosAddr = System.getProperty("im.connect.nacos", "127.0.0.1:8850");
         if (System.getProperty("im.connect.biz.threads") != null) {
             c.bizThreads = Integer.parseInt(System.getProperty("im.connect.biz.threads"));
         }

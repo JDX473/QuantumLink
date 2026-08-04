@@ -50,6 +50,11 @@
             <artifactId>minio</artifactId>
             <version>8.5.12</version>
         </dependency>
+        <!-- Nacos 服务发现:查询在线 connect 实例清单,做最少连接调度 -->
+        <dependency>
+            <groupId>com.alibaba.nacos</groupId>
+            <artifactId>nacos-client</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

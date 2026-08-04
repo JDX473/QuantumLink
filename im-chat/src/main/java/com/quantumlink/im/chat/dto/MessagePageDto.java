@@ -34,5 +34,7 @@ public class MessagePageDto {
         private String msgType;
         private String content;
         private Long serverTime;
+        /** 消息状态:SENT(已存储)/ DELIVERED(对方已送达),客户端据此渲染 */
+        private String status;
     }
 }

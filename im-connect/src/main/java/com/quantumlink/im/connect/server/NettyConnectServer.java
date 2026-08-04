@@ -9,6 +9,7 @@ import com.quantumlink.im.connect.handler.HeartbeatHandler;
 import com.quantumlink.im.connect.handler.MessageDispatcher;
 import com.quantumlink.im.connect.handler.MessageHandler;
 import com.quantumlink.im.connect.handler.UpstreamProducer;
+import com.quantumlink.im.connect.service.NodeReporter;
 import com.quantumlink.im.connect.service.SessionRegistry;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFuture;
@@ -48,6 +49,7 @@ public class NettyConnectServer {
     private SessionRegistry sessionRegistry;
     private UpstreamProducer upstreamProducer;
     private DownstreamConsumer downstreamConsumer;
+    private NodeReporter nodeReporter;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
 
@@ -57,9 +59,12 @@ public class NettyConnectServer {
 
     public void start() throws InterruptedException {
         // 1. 依赖
+        String nodeId = nodeId();
         this.sessionRegistry = new SessionRegistry(config);
         this.upstreamProducer = new UpstreamProducer(config);
-        this.downstreamConsumer = new DownstreamConsumer(config);
+        this.downstreamConsumer = new DownstreamConsumer(config, nodeId);
+        this.nodeReporter = new NodeReporter(config, nodeId);
+        this.nodeReporter.start();
 
         MessageDispatcher dispatcher = new MessageDispatcher(sessionRegistry, upstreamProducer);
 
@@ -92,12 +97,19 @@ public class NettyConnectServer {
         future.channel().closeFuture().sync();
     }
 
-    /** 节点 ID:MVP 单节点用 host:port,集群阶段由注册中心分配 */
+    /**
+     * 节点 ID:水平扩展的节点标识。
+     *
+     * <p>用 {@code host:port} 作为节点唯一标识(不同端口天然不同节点)。
+     * 它是 Redis 会话表的值、MQ tag 的来源、调度接口返回的地址,三处必须一致。
+     * 多节点:启动时用 {@code -Dim.connect.port=9998} 指定不同端口 → 不同节点。
+     */
     private String nodeId() {
         return "127.0.0.1:" + config.port;
     }
 
     public void shutdown() {
+        if (nodeReporter != null) nodeReporter.shutdown();
         if (upstreamProducer != null) upstreamProducer.shutdown();
         if (downstreamConsumer != null) downstreamConsumer.shutdown();
         if (sessionRegistry != null) sessionRegistry.shutdown();

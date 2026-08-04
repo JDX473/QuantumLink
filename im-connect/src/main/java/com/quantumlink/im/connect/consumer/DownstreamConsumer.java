@@ -38,11 +38,13 @@ public class DownstreamConsumer {
 
     private final DefaultMQPushConsumer consumer;
 
-    public DownstreamConsumer(ConnectConfig config) {
+    public DownstreamConsumer(ConnectConfig config, String nodeId) {
         this.consumer = new DefaultMQPushConsumer("im-connect-consumer");
         this.consumer.setNamesrvAddr(config.namesrvAddr);
         try {
-            this.consumer.subscribe("server2client", "*");
+            // 水平扩展:只订阅本节点的 tag。chat 发下行时按目标节点 nodeId 打 tag,
+            // Broker 端过滤后只有本节点收到,其他节点零开销(不广播)。
+            this.consumer.subscribe("server2client", nodeId);
             this.consumer.registerMessageListener((MessageListenerConcurrently) (msgs, context) -> {
                 for (MessageExt msg : msgs) {
                     try {
@@ -55,7 +57,7 @@ public class DownstreamConsumer {
                 return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
             });
             this.consumer.start();
-            log.info("downstream consumer started: topic=server2client");
+            log.info("downstream consumer started: topic=server2client tag={}", nodeId);
         } catch (Exception e) {
             throw new IllegalStateException("start downstream consumer failed", e);
         }
