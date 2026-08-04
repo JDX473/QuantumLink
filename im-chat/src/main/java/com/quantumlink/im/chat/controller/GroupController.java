@@ -1,7 +1,7 @@
 package com.quantumlink.im.chat.controller;
 
+import com.quantumlink.im.chat.dto.GroupMessageItemDto;
 import com.quantumlink.im.chat.entity.Group;
-import com.quantumlink.im.chat.entity.GroupMessage;
 import com.quantumlink.im.chat.service.GroupService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -87,13 +87,13 @@ public class GroupController {
         return resp;
     }
 
-    /** 群消息增量拉取(按 seq,与单聊同构) */
+    /** 群消息增量拉取(按 seq,与单聊同构;含发送者资料) */
     @GetMapping("/{groupId}/messages")
     public Map<String, Object> pullMessages(
             @PathVariable("groupId") String groupId,
             @RequestParam("afterSeq") long afterSeq,
             @RequestParam(value = "limit", required = false) Integer limit) {
-        List<GroupMessage> messages = groupService.pullGroupMessages(groupId, afterSeq, limit);
+        List<GroupMessageItemDto> messages = groupService.pullGroupMessages(groupId, afterSeq, limit);
         Map<String, Object> resp = new HashMap<>();
         resp.put("success", true);
         resp.put("messages", messages);
