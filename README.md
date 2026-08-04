@@ -112,6 +112,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 
 - [docs/mvp-design.md](docs/mvp-design.md) — MVP 设计与实现方案(权威)
 - [docs/ordering-article.md](docs/ordering-article.md) — **IM 消息有序性:从踩坑到解决**(深度技术文章,含 5 个坑 + 保序架构 + **分布式保序** + 11 个面试问答)
+- [docs/downstream-delivery-article.md](docs/downstream-delivery-article.md) — **IM 下行投递:从"时好时坏"到"一个 group 一个节点"**(RocketMQ Topic/Group/Tag 三层机制 + consumer group 共享的坑 + 修复设计 + 11 个面试问答)
 
 ## 提交规矩
 
