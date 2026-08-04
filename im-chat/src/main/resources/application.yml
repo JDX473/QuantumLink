@@ -35,3 +35,7 @@ minio:
   accessKey: minioadmin
   secretKey: minioadmin
   bucket: avatar
+
+# connect 长连接节点列表(调度接口返回,客户端直连)
+connect:
+  nodes: 127.0.0.1:9999,127.0.0.1:9998

@@ -97,6 +97,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - **2026-08-04(桌面端消息显示修复)**:修复消息气泡被裁剪成细条——`.message`/`.msg-head`/`.msg-foot` 加 `flex: 0 0 auto`,消息多时不再被 message-stream 的 flex 压缩(曾压缩到 18px 高,body/foot 溢出被 `overflow:hidden` 裁剪)。去除头像内联 `onerror`(CSP 无 unsafe-inline 会拦截,导致带头像消息塌陷),头像 img 加背景色兜底。登录页头像上传字段默认隐藏(仅注册 tab 显示)。
 - **2026-08-04(消息状态按实际渲染)**:修复"给离线用户发消息也显示已送达"——`openConversation` 拉历史时原本固定渲染 `delivered`。改为:下拉接口(MessagePageDto.MessageItem)返回 status 字段,客户端按实际状态渲染(`SENT`→已存储 / `DELIVERED`→对方已送达)。**验证**:离线发送的消息 status=SENT,下拉接口返回正确,客户端显示"已存储"。
 - **2026-08-04(合并到 master)**:桌面端消息显示修复、头像功能等 dev 验证通过的功能合并到 master。
+- **2026-08-04(水平扩展:多节点 + MQ tag 精准投递)**:去掉 gateway(两倍连接不划算),客户端直连。**架构**:多 connect 节点各自订阅自己的 MQ tag;Redis 会话表存 `userId#deviceId → nodeId`;chat 发下行时查会话表定位目标节点 → 打 nodeId tag 投 `server2client` → 只有目标节点消费(Broker 端过滤,非目标节点零开销)。新增 `GET /api/connects` 调度接口(返回节点列表,客户端随机直连);客户端连接前调调度接口选节点。**验证**:2 个 connect(9999/9998),A 连 9999、B 连 9998,互发消息跨节点到达;im-chat 日志显示 ACK 打 tag 9999、MSG 打 tag 9998,各自只被对应节点消费。
 
 ## 分支
 
