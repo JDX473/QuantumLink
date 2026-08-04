@@ -127,19 +127,16 @@ ipcMain.handle('convs:pull', async (_e, { conversationId, afterSeq }) => {
   return data;
 });
 
-/** 建立长连接(握手):先调调度接口拿节点列表,选一个直连 */
+/** 建立长连接(握手):调调度接口拿"该连哪个节点"(服务端最少连接决策),照单直连 */
 ipcMain.handle('connect:start', async (_e, { token, deviceId }) => {
   if (client) { client.close(); client = null; }
 
-  // 从调度接口获取可连的 connect 节点
+  // 调度接口已由服务端算好最少连接节点,客户端无需感知节点列表
   const dispatchRes = await fetch('http://127.0.0.1:8081/api/connects');
   const dispatch = await dispatchRes.json();
-  const nodes = (dispatch.nodes || []).map(n => n.address);
-  const nodeAddr = nodes.length > 0
-    ? nodes[Math.floor(Math.random() * nodes.length)] // 随机挑一个(负载均衡)
-    : '127.0.0.1:9999'; // 兜底
+  const nodeAddr = dispatch.success ? dispatch.address : '127.0.0.1:9999'; // 兜底
   const [host, port] = nodeAddr.split(':');
-  console.log('[dispatch] 选择节点:', nodeAddr);
+  console.log('[dispatch] 服务端决策节点:', nodeAddr);
 
   client = new ImClient({
     host,

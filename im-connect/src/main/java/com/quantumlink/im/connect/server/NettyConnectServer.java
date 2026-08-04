@@ -9,6 +9,7 @@ import com.quantumlink.im.connect.handler.HeartbeatHandler;
 import com.quantumlink.im.connect.handler.MessageDispatcher;
 import com.quantumlink.im.connect.handler.MessageHandler;
 import com.quantumlink.im.connect.handler.UpstreamProducer;
+import com.quantumlink.im.connect.service.NodeReporter;
 import com.quantumlink.im.connect.service.SessionRegistry;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFuture;
@@ -48,6 +49,7 @@ public class NettyConnectServer {
     private SessionRegistry sessionRegistry;
     private UpstreamProducer upstreamProducer;
     private DownstreamConsumer downstreamConsumer;
+    private NodeReporter nodeReporter;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
 
@@ -61,6 +63,8 @@ public class NettyConnectServer {
         this.sessionRegistry = new SessionRegistry(config);
         this.upstreamProducer = new UpstreamProducer(config);
         this.downstreamConsumer = new DownstreamConsumer(config, nodeId);
+        this.nodeReporter = new NodeReporter(config, nodeId);
+        this.nodeReporter.start();
 
         MessageDispatcher dispatcher = new MessageDispatcher(sessionRegistry, upstreamProducer);
 
@@ -105,6 +109,7 @@ public class NettyConnectServer {
     }
 
     public void shutdown() {
+        if (nodeReporter != null) nodeReporter.shutdown();
         if (upstreamProducer != null) upstreamProducer.shutdown();
         if (downstreamConsumer != null) downstreamConsumer.shutdown();
         if (sessionRegistry != null) sessionRegistry.shutdown();

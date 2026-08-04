@@ -10,6 +10,7 @@
    ▼
 im-connect(port 9999,Netty 长连接层)
    │  握手鉴权 · 心跳 · EventLoop 异步化 · per-conversation 保序 · 会话注册
+   │  注册 Nacos · 上报连接数(最少连接调度的数据源)
    │
    │  RocketMQ(上行 client2server / deliver_ack)
    ▼
@@ -27,7 +28,7 @@ im-connect → 目标客户端
 | 模块 | 端口 | 职责 | 状态 |
 |------|------|------|------|
 | im-common | — | 自定义 TCP 协议帧、DTO、工具 | ✅ 协议编解码+测试通过 |
-| im-connect | 9999 | Netty 长连接层:握手鉴权/心跳/EventLoop异步/保序/上行下行 | ✅ 端到端打通 |
+| im-connect | 9999 | Netty 长连接层:握手鉴权/心跳/保序/上行下行/注册Nacos+上报连接数 | ✅ 端到端打通 |
 | im-gateway | 88 | 入口代理(负载均衡+Nacos 路由) | MVP 后置 |
 | im-chat | 8081 | 业务层:注册登录/幂等/落库/seq/离线拉取/双ACK | ✅ 端到端打通 |
 | im-loadtest | — | 压测客户端 | MVP 后置 |
@@ -40,7 +41,7 @@ Java 17 · Maven · Netty 4.1 · RocketMQ 5 · Redis 7 · MySQL 8 · Spring Boot
 ## 快速开始
 
 ```bash
-# 1. 启动本机中间件(RocketMQ + Redis;MySQL 假设已作为 Windows 服务运行)
+# 1. 启动本机中间件(RocketMQ + Redis + Nacos;MySQL 假设已作为 Windows 服务运行)
 scripts/start-middleware.cmd
 
 # 2. 构建(本机默认 JDK8,需用 JDK17)
@@ -71,6 +72,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 | 双 ACK(STORE/DELIVER) | 区分"已存储"与"对方已送达",覆盖不同故障边界 |
 | 先落库后缓存 | 可靠锚点在 MySQL,Redis 可丢弃,客户端 seq 补拉自愈 |
 | EventLoop 只收发 | 阻塞调用丢 per-conversation executor,保序且不阻塞 EventLoop |
+| 服务端最少连接调度 | 三层职责分离:Nacos 管实例存在性、会话表管消息路由、连接数心跳管负载指标;调度接口返回"该连谁",客户端无感知节点列表 |
 
 ## 项目进展
 
@@ -98,6 +100,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - **2026-08-04(消息状态按实际渲染)**:修复"给离线用户发消息也显示已送达"——`openConversation` 拉历史时原本固定渲染 `delivered`。改为:下拉接口(MessagePageDto.MessageItem)返回 status 字段,客户端按实际状态渲染(`SENT`→已存储 / `DELIVERED`→对方已送达)。**验证**:离线发送的消息 status=SENT,下拉接口返回正确,客户端显示"已存储"。
 - **2026-08-04(合并到 master)**:桌面端消息显示修复、头像功能等 dev 验证通过的功能合并到 master。
 - **2026-08-04(水平扩展:多节点 + MQ tag 精准投递)**:去掉 gateway(两倍连接不划算),客户端直连。**架构**:多 connect 节点各自订阅自己的 MQ tag;Redis 会话表存 `userId#deviceId → nodeId`;chat 发下行时查会话表定位目标节点 → 打 nodeId tag 投 `server2client` → 只有目标节点消费(Broker 端过滤,非目标节点零开销)。新增 `GET /api/connects` 调度接口(返回节点列表,客户端随机直连);客户端连接前调调度接口选节点。**验证**:2 个 connect(9999/9998),A 连 9999、B 连 9998,互发消息跨节点到达;im-chat 日志显示 ACK 打 tag 9999、MSG 打 tag 9998,各自只被对应节点消费。
+- **2026-08-04(最少连接负载均衡 + Nacos 服务发现)**:调度从"静态节点列表 + 客户端随机"升级为**服务端最少连接决策**。connect 启动注册 Nacos 服务 `im-connect`(动态发现 + 健康检查),每 1s 把本地连接数 `ChannelManager.size()` SETEX 到 Redis `im:node:conns:{nodeId}`(TTL 3s);chat 调度接口 = Nacos 健康实例 × Redis 实时连接数 → 返回连接最少的节点,客户端照单直连(节点列表对客户端透明)。**三层职责分离**:Nacos(实例存在性)/ 会话表(消息路由)/ 连接数心跳(负载指标)。**验证**:verify-lb(3 条连 9999 → 选 9998;再 4 条连 9998 → 切回 9999)、杀 9998 自动摘除、跨节点互聊回归通过。**Nacos 本机端口**:server.port=8850(本机 7848 被 wpspdf 占用,JRaft 端口 = server.port-1000,整体偏移)。
 
 ## 分支
 

@@ -36,6 +36,7 @@ minio:
   secretKey: minioadmin
   bucket: avatar
 
-# connect 长连接节点列表(调度接口返回,客户端直连)
-connect:
-  nodes: 127.0.0.1:9999,127.0.0.1:9998
+# Nacos 服务注册中心:connect 启动注册 im-connect 实例,chat 查询做服务发现
+# + 最少连接调度(替代旧的静态 connect.nodes 配置)
+nacos:
+  server-addr: 127.0.0.1:8850

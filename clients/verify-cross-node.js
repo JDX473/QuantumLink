@@ -18,9 +18,9 @@ async function login(username, password) {
 }
 
 async function main() {
-  // 1. 调度接口
+  // 1. 调度接口(新接口:服务端最少连接决策,返回单个节点)
   const dispatch = await (await fetch(API + '/api/connects')).json();
-  console.log('调度接口节点列表:', dispatch.nodes.map(n => n.address).join(', '));
+  console.log('调度接口最少连接节点:', dispatch.address, '(本脚本强制连 9999/9998 验证跨节点)');
 
   // 2. 登录两个用户
   const a = await login('crossnodeA', 'pass123');
