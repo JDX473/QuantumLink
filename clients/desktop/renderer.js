@@ -211,35 +211,34 @@ function renderMessage(msg, status) {
   const isMine = msg.senderId === currentUser;
 
   const el = document.createElement('div');
-  el.className = 'message ' + (isMine ? 'mine' : 'theirs');
+  el.className = 'message-row ' + (isMine ? 'mine' : 'theirs');
   el.dataset.msgId = msg.serverMsgId || '';
   el.dataset.clientMsgId = msg.clientMsgId || '';
 
-  const head = document.createElement('div');
-  head.className = 'msg-head';
-  // 显示头像 + 用户名(senderName),不暴露 userId
+  // 头像(气泡外侧):自己右侧,对方左侧
   const displayName = isMine ? '我' : (msg.senderName || msg.senderId || '?');
   const avatarHtml = msg.senderAvatar
     ? `<img class="msg-avatar" src="${escapeHtml(msg.senderAvatar)}" alt="">`
     : `<span class="msg-avatar msg-avatar-placeholder">${escapeHtml((displayName || '?')[0])}</span>`;
-  head.innerHTML = `
-    <span class="msg-avatar-wrap">${avatarHtml}</span>
-    <span class="msg-sender">${escapeHtml(displayName)}</span>
-    <span class="msg-seq">seq:${msg.seq ?? '—'}</span>
-    <span class="msg-time">${msg.serverTime ? formatTime(msg.serverTime) : ''}</span>
-  `;
 
+  // 气泡:只有内容 + 状态(微信式,seq/时间/用户名都收进气泡下方小字)
   const body = document.createElement('div');
   body.className = 'msg-body';
   body.textContent = msg.content || '';
 
-  const foot = document.createElement('div');
-  foot.className = 'msg-foot';
-  foot.innerHTML = `<div class="msg-status">${statusTextFor(status)}</div>`;
+  const meta = document.createElement('div');
+  meta.className = 'msg-meta';
+  // 状态灯 + 时间;seq 保留在 data 里用于调试,不展示
+  const timeText = msg.serverTime ? formatTime(msg.serverTime) : '';
+  meta.innerHTML = `<span class="msg-status">${statusTextFor(status)}</span><span class="msg-time">${escapeHtml(timeText)}</span>`;
 
-  el.appendChild(head);
-  el.appendChild(body);
-  el.appendChild(foot);
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+  bubble.appendChild(body);
+  bubble.appendChild(meta);
+
+  el.appendChild(avatarHtml ? (() => { const a = document.createElement('span'); a.className='msg-avatar-wrap'; a.innerHTML = avatarHtml; return a; })() : document.createElement('span'));
+  el.appendChild(bubble);
   stream.appendChild(el);
   stream.scrollTop = stream.scrollHeight;
   return el;
@@ -257,8 +256,8 @@ function statusTextFor(status) {
 
 function updateMessageStatus(el, status) {
   if (!el) return;
-  const foot = el.querySelector('.msg-foot');
-  if (foot) foot.innerHTML = `<div class="msg-status">${statusTextFor(status)}</div>`;
+  const statusEl = el.querySelector('.msg-status');
+  if (statusEl) statusEl.innerHTML = statusTextFor(status);
 }
 
 function escapeHtml(s) {
@@ -314,10 +313,10 @@ api.onSendFailed((msg) => {
 });
 
 function findMessageByClientId(clientMsgId) {
-  return document.querySelector(`.message[data-client-msg-id="${clientMsgId}"]`);
+  return document.querySelector(`.message-row[data-client-msg-id="${clientMsgId}"]`);
 }
 function findMessageByMsgId(msgId) {
-  return document.querySelector(`.message[data-msg-id="${msgId}"]`);
+  return document.querySelector(`.message-row[data-msg-id="${msgId}"]`);
 }
 
 // ---- 发送(当前会话,无需填接收方) ----
@@ -329,7 +328,7 @@ function send() {
   const [a, b] = currentConv.split('#');
   const receiverId = a === currentUser ? b : a;
 
-  const msg = { senderId: currentUser, receiverId, content, clientTime: Date.now() };
+  const msg = { senderId: currentUser, senderAvatar: currentAvatar, receiverId, content, clientTime: Date.now() };
   const el = renderMessage(msg, 'sending');
 
   api.send({ receiverId, content, msgType: 'TEXT' })

@@ -31,6 +31,9 @@ public class MessagePageDto {
         private Long seq;
         private String conversationId;
         private String senderId;
+        /** 发送者用户名 + 头像(UI 显示用,不暴露 userId 语义,内部仍带 senderId) */
+        private String senderName;
+        private String senderAvatar;
         private String msgType;
         private String content;
         private Long serverTime;

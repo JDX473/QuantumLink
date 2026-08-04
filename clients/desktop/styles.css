@@ -208,55 +208,53 @@ html, body {
   gap: 10px;
 }
 
-/* 报文式消息:标题头(元数据) + 内容 + 状态灯 */
-.message {
-  max-width: 72%;
-  display: flex; flex-direction: column;
-  flex: 0 0 auto;                 /* 关键:不随 message-stream 收缩,保持自然高度 */
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel-2);
-  overflow: hidden;
+/* 微信式消息:头像在气泡外侧,自己右对齐对方左对齐,气泡只有内容+状态 */
+.message-row {
+  display: flex;
+  align-items: flex-start;    /* 头像与气泡顶部平行(微信式),送达状态落在气泡下方 */
+  gap: 8px;
+  flex: 0 0 auto;             /* 关键:不随 message-stream 收缩 */
+  max-width: 80%;
   animation: msg-in 0.2s ease;
 }
 @keyframes msg-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-.message.mine { align-self: flex-end; border-color: rgba(139,92,246,0.35); }
-.message.theirs { align-self: flex-start; }
+.message-row.mine   { align-self: flex-end; flex-direction: row-reverse; }
+.message-row.theirs { align-self: flex-start; }
 
-.msg-head {
-  display: flex; align-items: center; gap: 8px;
-  flex: 0 0 auto;
-  padding: 6px 10px;
-  background: rgba(0,0,0,0.2);
-  border-bottom: 1px solid var(--line);
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--muted);
-}
-.msg-avatar-wrap { display: inline-flex; }
-.msg-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; background: #2A3445; }
+.msg-avatar-wrap { flex-shrink: 0; display: inline-flex; }
+.msg-avatar { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; background: #2A3445; }
 .msg-avatar-placeholder {
-  width: 22px; height: 22px; border-radius: 50%;
+  width: 36px; height: 36px; border-radius: 6px;
   background: var(--quantum); color: #fff;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 700;
+  font-size: 14px; font-weight: 700;
 }
-.msg-sender { color: var(--text); font-weight: 600; }
-.msg-seq { color: var(--quantum); }
-.msg-time { margin-left: auto; }
 
-.msg-body { padding: 9px 12px; font-size: 14px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; flex: 0 0 auto; }
+.msg-bubble {
+  display: flex; flex-direction: column;
+  max-width: 100%;
+}
+.msg-body {
+  padding: 9px 13px;
+  font-size: 15px; line-height: 1.5;
+  word-break: break-word; white-space: pre-wrap;
+  border-radius: 10px;
+}
+.message-row.mine .msg-body   { background: var(--bubble-mine, #3A3F5C); border-top-left-radius: 2px; }
+.message-row.theirs .msg-body { background: var(--panel-2); border-top-right-radius: 2px; }
 
-.msg-foot {
-  display: flex; align-items: center; gap: 8px;
-  flex: 0 0 auto;
-  padding: 0 10px 7px;
+/* 气泡下方小字:状态 + 时间(seq 不展示,保留在 data 里调试) */
+.msg-meta {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 6px;
+  margin-top: 3px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
 }
-.msg-status { display: flex; align-items: center; gap: 5px; }
+.message-row.theirs .msg-meta { justify-content: flex-start; }
+.msg-status { display: flex; align-items: center; gap: 4px; }
 .msg-status .sending { color: var(--muted); }
 .msg-status .stored { color: var(--signal); }
 .msg-status .delivered { color: var(--quantum); }
