@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: im-chat
+  # 上传限制:头像/文件消息(默认 1MB 太小,注册带大图会 500)
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # 本机 MySQL:3306,root/123456,库 quantumlink(独立库,与旧项目 im 隔离)

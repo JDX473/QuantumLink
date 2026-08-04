@@ -1,6 +1,7 @@
 package com.quantumlink.im.chat.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.quantumlink.im.chat.dto.GroupMessageItemDto;
 import com.quantumlink.im.chat.entity.Group;
 import com.quantumlink.im.chat.entity.GroupMember;
 import com.quantumlink.im.chat.entity.GroupMessage;
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -190,15 +192,45 @@ public class GroupService {
         log.info("group ACK-STORE sent: sender={} seq={}", payload.getSenderId(), seq);
     }
 
-    /** 群消息增量拉取(按 seq,与单聊同构):返回 seq > afterSeq 的消息 */
-    public List<GroupMessage> pullGroupMessages(String groupId, long afterSeq, Integer limit) {
+    /** 群消息增量拉取(按 seq,与单聊同构):返回 seq > afterSeq 的消息(含发送者资料) */
+    public List<GroupMessageItemDto> pullGroupMessages(String groupId, long afterSeq, Integer limit) {
         int pageSize = (limit == null || limit <= 0) ? DEFAULT_LIMIT : Math.min(limit, MAX_LIMIT);
-        return messageMapper.selectList(
+        List<GroupMessage> rows = messageMapper.selectList(
                 new LambdaQueryWrapper<GroupMessage>()
                         .eq(GroupMessage::getGroupId, groupId)
                         .gt(GroupMessage::getSeq, afterSeq)
                         .orderByAsc(GroupMessage::getSeq)
                         .last("LIMIT " + pageSize));
+
+        // 批量取发送者资料(与单聊 pullMessages 一致,一次查完)
+        Set<String> senderIds = new HashSet<>();
+        for (GroupMessage m : rows) senderIds.add(m.getSenderId());
+        Map<String, User> senderMap = new java.util.HashMap<>();
+        if (!senderIds.isEmpty()) {
+            List<User> senders = userMapper.selectList(
+                    new LambdaQueryWrapper<User>().in(User::getUserId, senderIds));
+            for (User u : senders) senderMap.put(u.getUserId(), u);
+        }
+
+        List<GroupMessageItemDto> items = new ArrayList<>(rows.size());
+        for (GroupMessage m : rows) {
+            GroupMessageItemDto item = new GroupMessageItemDto();
+            item.setServerMsgId(m.getId());
+            item.setSeq(m.getSeq());
+            item.setGroupId(m.getGroupId());
+            item.setSenderId(m.getSenderId());
+            User sender = senderMap.get(m.getSenderId());
+            if (sender != null) {
+                item.setSenderName(sender.getUsername());
+                item.setSenderAvatar(sender.getAvatarUrl());
+            }
+            item.setMsgType(m.getMsgType());
+            item.setContent(m.getContent());
+            item.setServerTime(m.getServerTime());
+            item.setStatus(m.getStatus());
+            items.add(item);
+        }
+        return items;
     }
 
     /** 群当前最大 seq(水位线) */
