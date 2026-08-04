@@ -30,7 +30,7 @@ im-connect → 目标客户端
 | im-common | — | 自定义 TCP 协议帧、DTO、工具 | ✅ 协议编解码+测试通过 |
 | im-connect | 9999 | Netty 长连接层:握手鉴权/心跳/保序/上行下行/注册Nacos+上报连接数 | ✅ 端到端打通 |
 | im-gateway | 88 | 入口代理(负载均衡+Nacos 路由) | MVP 后置 |
-| im-chat | 8081 | 业务层:注册登录/幂等/落库/seq/离线拉取/双ACK | ✅ 端到端打通 |
+| im-chat | 8081 | 业务层:注册登录/幂等/落库/seq/离线拉取/双ACK/最少连接调度/群聊 | ✅ 端到端打通 |
 | im-loadtest | — | 压测客户端 | MVP 后置 |
 | im-desktop(客户端) | — | Electron 桌面端(TCP 走主进程,UI 走渲染进程) | ✅ 窗口+登录+收发 |
 
@@ -103,6 +103,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - **2026-08-04(最少连接负载均衡 + Nacos 服务发现)**:调度从"静态节点列表 + 客户端随机"升级为**服务端最少连接决策**。connect 启动注册 Nacos 服务 `im-connect`(动态发现 + 健康检查),每 1s 把本地连接数 `ChannelManager.size()` SETEX 到 Redis `im:node:conns:{nodeId}`(TTL 3s);chat 调度接口 = Nacos 健康实例 × Redis 实时连接数 → 返回连接最少的节点,客户端照单直连(节点列表对客户端透明)。**三层职责分离**:Nacos(实例存在性)/ 会话表(消息路由)/ 连接数心跳(负载指标)。**验证**:verify-lb(3 条连 9999 → 选 9998;再 4 条连 9998 → 切回 9999)、杀 9998 自动摘除、跨节点互聊回归通过。**Nacos 本机端口**:server.port=8850(本机 7848 被 wpspdf 占用,JRaft 端口 = server.port-1000,整体偏移)。
 - **2026-08-04(修复:多节点下行丢消息——consumer group 共享)**:多 connect 节点共用同一个 RocketMQ consumer group(`im-connect-consumer`),导致"发给 B 节点的消息被 A 节点消费后丢弃"。**根因**:同一 group 内队列被分摊,消息落错队列 → 目标节点够不到;虽然 broker 按 tag 过滤,但过滤发生在"消费者拉取时",而"谁持有队列"由 group 决定。**修复**:每个节点独立 consumer group(group 名带 nodeId,`:`/`.` 转 `_` 符合 RocketMQ 命名规范)——单消费者独享全部队列,必能拉到自己的 tag。**端口变更**:connect 端口 9999/9998 → 19001/19002(999x 落在 Windows 动态端口范围 1024-15000 内,可能被系统出站连接占用冲突)。**验证**:verify-lb 最少连接 + verify-cross-node 跨节点互聊全部通过。
 - **2026-08-05(微信式消息 UI + 头像修复)**:消息渲染从"报文式"(气泡上方头像/用户名/seq/时间)改为**微信式**(头像在气泡外侧、自己右对齐对方左对齐、气泡只有内容、状态+时间在气泡下方小字,seq 收进 data 调试)。**头像修复**:① 自己发消息本地渲染没带头像(send 补 senderAvatar);② 重进会话头像丢失——`pullMessages` 拉取接口没填充 senderName/senderAvatar(与下行推送 fillSenderProfile 不一致),现批量查发送者资料填充。**验证**:拉取接口返回 senderName+senderAvatar 正确。
+- **2026-08-05(群聊:读扩散 + 按节点聚合推送)**:支持群聊。**核心选型**:读扩散(群消息落 1 份,成员各自 seq 位点拉取,与单聊同构)+ 在线推送。**信封 targets 聚合**:DownstreamEnvelope 加 targets 数组(该节点上的成员列表),chat 查会话表按 nodeId 分组,每节点一条 MQ(100 人群 2 节点 = 2 条而非 100 条),connect 遍历 targets 推送(多端全推)。**群消息不回 DELIVER**(微信群无"已送达"),只回 ACK-STORE。**存储**:新建 im_group / im_group_member / im_group_message(独立表,分库分表时按 group_id 分片)。**验证**:3 人群跨节点(jds@19001, jdx/alice@19002)发 3 条群消息全实时到达,群 seq 连续无重复,离线补拉通过。**踩坑**:Java 17 `.toList()` 不可变 List,成员 remove 抛 UnsupportedOperationException 导致群播静默不发(改可变 List 修复)。
 
 ## 分支
 
@@ -114,6 +115,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - [docs/mvp-design.md](docs/mvp-design.md) — MVP 设计与实现方案(权威)
 - [docs/ordering-article.md](docs/ordering-article.md) — **IM 消息有序性:从踩坑到解决**(深度技术文章,含 5 个坑 + 保序架构 + **分布式保序** + 11 个面试问答)
 - [docs/downstream-delivery-article.md](docs/downstream-delivery-article.md) — **IM 下行投递:从"时好时坏"到"一个 group 一个节点"**(RocketMQ Topic/Group/Tag 三层机制 + consumer group 共享的坑 + 修复设计 + 11 个面试问答)
+- [docs/group-chat-design.md](docs/group-chat-design.md) — **群聊设计:读扩散 + 按节点聚合推送**(扩散模型选型 + 信封 targets 聚合 + 群消息链路 + 踩坑)
 
 ## 提交规矩
 

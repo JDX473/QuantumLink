@@ -78,6 +78,52 @@ public class DownstreamProducer {
     }
 
     /**
+     * 群播发送:按成员 userId 定位节点 → 按 nodeId 分组 → 每节点一条 targets 信封。
+     *
+     * <p>为什么按节点聚合:100 人群分散在 2 个 connect 节点,若每人一条 MQ 要发 100 条;
+     * 聚合后每节点一条(2 条),connect 端遍历 targets 推给本节点上的所有成员,
+     * 大幅减少 MQ 扇出。离线成员(会话表无记录)不投递,上线走增量拉取。
+     *
+     * @param targetUserIds 目标成员 userId 列表(去重后的在线成员)
+     * @param contentType   DownstreamEnvelope.TYPE_ACK / TYPE_MSG
+     * @param data          AckPayload 或 MessagePayload 对象
+     */
+    public void sendGroupEnvelope(java.util.List<String> targetUserIds, String contentType, Object data) {
+        // 按 nodeId 分组:nodeId → 该节点上的成员列表
+        java.util.Map<String, java.util.List<String>> byNode = new java.util.LinkedHashMap<>();
+        for (String uid : targetUserIds) {
+            // 查会话表定位该用户节点(多端全推:任一在线设备即可,同一用户多端同节点)
+            var keys = redisTemplate.keys(SESSION_PREFIX + uid + ":*");
+            if (keys == null || keys.isEmpty()) {
+                continue; // 离线成员:不推送,上线拉取
+            }
+            String nodeId = null;
+            for (Object k : keys) {
+                String v = redisTemplate.opsForValue().get((String) k);
+                if (v != null) { nodeId = v; break; }
+            }
+            if (nodeId == null) continue;
+            byNode.computeIfAbsent(nodeId, k -> new java.util.ArrayList<>()).add(uid);
+        }
+
+        for (java.util.Map.Entry<String, java.util.List<String>> e : byNode.entrySet()) {
+            DownstreamEnvelope envelope = new DownstreamEnvelope();
+            envelope.setTargets(e.getValue());
+            envelope.setType(contentType);
+            envelope.setData(data);
+            Message msg = new Message(downstreamTopic, JsonUtil.toJson(envelope).getBytes(StandardCharsets.UTF_8));
+            try {
+                msg.setTags(e.getKey());
+                SendResult result = producer.send(msg);
+                log.info("group downstream sent: topic={} tag={} members={} msgId={}",
+                        downstreamTopic, e.getKey(), e.getValue().size(), result.getMsgId());
+            } catch (Exception ex) {
+                log.error("group downstream send failed: tag={} members={}", e.getKey(), e.getValue().size(), ex);
+            }
+        }
+    }
+
+    /**
      * 发送下行消息,查会话表定位目标节点并打 tag。
      *
      * <p>水平扩展核心:同一用户的所有在线设备 → 各自的节点 tag。

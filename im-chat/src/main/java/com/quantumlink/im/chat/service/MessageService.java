@@ -54,6 +54,7 @@ public class MessageService {
     private final UserMapper userMapper;
     private final StringRedisTemplate redisTemplate;
     private final DownstreamProducer downstreamProducer;
+    private final GroupService groupService;
 
     /** 并发段线程池:绑定 seq 后的落库/ACK/推送,可全并行 */
     private final ExecutorService asyncExecutor = Executors.newFixedThreadPool(
@@ -73,6 +74,12 @@ public class MessageService {
      * @return true=新消息已入队处理;false=重复消息
      */
     public boolean handleUpstream(MessagePayload payload) {
+        // 群消息:conversationId 以 g_ 开头(群 id)→ 走群链路(读扩散,独立表)
+        if (payload.getConversationId() != null && payload.getConversationId().startsWith("g_")) {
+            groupService.handleGroupMessage(payload);
+            return true;
+        }
+
         // 服务端计算会话 ID:min(a,b)#max(a,b),保证同一对用户会话稳定(不管谁发起)
         if (payload.getConversationId() == null || payload.getConversationId().isEmpty()) {
             payload.setConversationId(buildConversationId(payload.getSenderId(), payload.getReceiverId()));

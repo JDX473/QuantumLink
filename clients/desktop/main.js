@@ -158,15 +158,38 @@ ipcMain.handle('connect:start', async (_e, { token, deviceId }) => {
   return { ok: true };
 });
 
-/** 发送消息 */
-ipcMain.handle('chat:send', async (_e, { receiverId, content, msgType }) => {
+/** 发送消息(单聊:receiverId;群聊:conversationId=群 id + receiverId=群 id) */
+ipcMain.handle('chat:send', async (_e, { receiverId, conversationId, content, msgType }) => {
   if (!client) throw new Error('not connected');
   return client.sendMessage({
     receiverId,
+    conversationId,   // 群聊时传群 id,connect 按群选队列(群内保序)
     msgType: msgType || 'TEXT',
     content,
     clientTime: Date.now(),
   });
+});
+
+/** 创建群 */
+ipcMain.handle('groups:create', async (_e, { name, ownerId, members }) => {
+  const res = await fetch('http://127.0.0.1:8081/api/groups', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, ownerId, members }),
+  });
+  return res.json();
+});
+
+/** 我的群列表 */
+ipcMain.handle('groups:list', async (_e, { userId }) => {
+  const res = await fetch(`http://127.0.0.1:8081/api/groups?userId=${encodeURIComponent(userId)}`);
+  return res.json();
+});
+
+/** 群消息增量拉取(按 seq) */
+ipcMain.handle('groups:pull', async (_e, { groupId, afterSeq }) => {
+  const res = await fetch(`http://127.0.0.1:8081/api/groups/${encodeURIComponent(groupId)}/messages?afterSeq=${afterSeq}`);
+  return res.json();
 });
 
 /** 断开 */

@@ -64,6 +64,46 @@ CREATE TABLE IF NOT EXISTS `im_message` (
     KEY `idx_receiver_seq` (`receiver_id`, `seq`)
 ) ENGINE = InnoDB COMMENT = '消息';
 
+-- 群表:群身份(群消息的接收方维度)
+CREATE TABLE IF NOT EXISTS `im_group` (
+    `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `group_id`   VARCHAR(64)  NOT NULL COMMENT '服务端分配,群身份',
+    `name`       VARCHAR(128) NOT NULL COMMENT '群名',
+    `owner_id`   VARCHAR(64)  NOT NULL COMMENT '群主 userId',
+    `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_group_id` (`group_id`)
+) ENGINE = InnoDB COMMENT = '群';
+
+-- 群成员表:群 → 成员 多对多
+CREATE TABLE IF NOT EXISTS `im_group_member` (
+    `id`        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `group_id`  VARCHAR(64) NOT NULL,
+    `user_id`   VARCHAR(64) NOT NULL,
+    `role`      VARCHAR(16) NOT NULL DEFAULT 'MEMBER' COMMENT 'OWNER / MEMBER',
+    `joined_at` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_group_user` (`group_id`, `user_id`),
+    KEY `idx_user` (`user_id`)
+) ENGINE = InnoDB COMMENT = '群成员';
+
+-- 群消息表:与单聊表分离(分库分表时群按 group_id 分片)
+-- 群消息不回 DELIVER(无"对方已送达"),status 恒 SENT
+CREATE TABLE IF NOT EXISTS `im_group_message` (
+    `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键自增,即 server_msg_id',
+    `client_msg_id` VARCHAR(128) NOT NULL COMMENT '客户端生成,幂等去重键',
+    `group_id`      VARCHAR(64)  NOT NULL,
+    `sender_id`     VARCHAR(64)  NOT NULL,
+    `msg_type`      VARCHAR(16)  NOT NULL DEFAULT 'TEXT',
+    `content`       TEXT         NULL,
+    `seq`           BIGINT       NOT NULL COMMENT '群维度 Redis INCR,群内单调',
+    `status`        VARCHAR(16)  NOT NULL DEFAULT 'SENT',
+    `server_time`   BIGINT       NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_sender_clientmsg` (`sender_id`, `client_msg_id`),
+    KEY `idx_group_seq` (`group_id`, `seq`)
+) ENGINE = InnoDB COMMENT = '群消息';
+
 -- 默认测试用户(便于本地验证;生产应走注册接口)
 INSERT IGNORE INTO `im_user` (`user_id`, `username`, `password_hash`)
 VALUES ('user_001', 'alice', 'dev-only'),

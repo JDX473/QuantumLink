@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('quantumlink', {
 
   // 消息
   send: (msg) => ipcRenderer.invoke('chat:send', msg),
+  // 群聊
+  createGroup: (info) => ipcRenderer.invoke('groups:create', info),
+  listGroups: (info) => ipcRenderer.invoke('groups:list', info),
+  pullGroupMessages: (info) => ipcRenderer.invoke('groups:pull', info),
 
   // 主进程 → 渲染进程事件
   onConnectionStatus: (cb) => ipcRenderer.on('conn:status', (_e, data) => cb(data)),
