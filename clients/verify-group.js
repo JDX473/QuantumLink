@@ -39,9 +39,9 @@ async function main() {
     onMessage: (m) => { aliceMsgs.push(m); console.log(`[alice] ★群消息: "${m.content}" seq=${m.seq} sender=${m.senderId}`); } });
   await sleep(1500);
 
-  // 2. 建群:jds 建群,成员 jdx + alice
-  const created = await (await fetch(API + '/api/groups', { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ name: '测试群', ownerId: jds.userId, members: [jdx.userId, alice.userId] }) })).json();
+  // 2. 建群:jds 建群,成员 jdx + alice(ownerId 服务端从鉴权上下文取,需带 token)
+  const created = await (await fetch(API + '/api/groups', { method:'POST', headers:{'Content-Type':'application/json', Authorization: 'Bearer ' + jds.token},
+    body: JSON.stringify({ name: '测试群', members: [jdx.userId, alice.userId] }) })).json();
   console.log(`群创建: groupId=${created.groupId} name=${created.name}`);
   const gid = created.groupId;
 
@@ -71,7 +71,7 @@ async function main() {
   // 5. 群消息落库 + 离线拉取:jds 再发一条,然后查拉取接口
   ca.sendMessage({ receiverId: gid, conversationId: gid, msgType:'TEXT', content: '离线补拉测试', clientTime: Date.now() });
   await sleep(2500);
-  const pulled = await (await fetch(`${API}/api/groups/${gid}/messages?afterSeq=0`)).json();
+  const pulled = await (await fetch(`${API}/api/groups/${gid}/messages?afterSeq=0`, { headers: { Authorization: 'Bearer ' + jds.token } })).json();
   console.log(`拉取接口: ${pulled.messages.length} 条, maxSeq=${pulled.maxSeq}`);
   const contents = pulled.messages.map(m => m.content);
   console.log(`拉取内容: ${contents.join(', ')}`);

@@ -1,10 +1,15 @@
 package com.quantumlink.im.chat.controller;
 
+import com.quantumlink.im.chat.config.AuthContext;
 import com.quantumlink.im.chat.dto.ConversationListDto;
 import com.quantumlink.im.chat.dto.MessagePageDto;
 import com.quantumlink.im.chat.service.MessageQueryService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * 消息查询接口。
@@ -21,26 +26,31 @@ public class MessageController {
 
     /**
      * 增量拉取某会话 afterSeq 之后的消息,按 seq 升序。
-     *
-     * @param conversationId 会话 ID(A#B)
-     * @param afterSeq       客户端已同步的最大 seq(位点)
-     * @param limit          每页条数(默认 50,上限 200)
+     * 越权防护:仅允许会话参与者(会话 ID = A#B,当前用户必须是 A 或 B)拉取。
      */
     @GetMapping("/conversations/{conversationId}/messages")
-    public MessagePageDto pullMessages(
+    public Object pullMessages(
             @PathVariable("conversationId") String conversationId,
             @RequestParam("afterSeq") long afterSeq,
-            @RequestParam(value = "limit", required = false) Integer limit) {
+            @RequestParam(value = "limit", required = false) Integer limit,
+            HttpServletRequest request) {
+        String userId = AuthContext.currentUserId(request);
+        if (!AuthContext.isConversationParticipant(conversationId, userId)) {
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("success", false);
+            resp.put("message", "forbidden: not a conversation participant");
+            return resp;
+        }
         return messageQueryService.pullMessages(conversationId, afterSeq, limit);
     }
 
     /**
-     * 会话列表:某用户参与的所有会话,按最后一条消息时间倒序。
-     *
-     * @param userId 用户 ID
+     * 会话列表:当前登录用户的会话,按最后一条消息时间倒序。
+     * 越权防护:userId 从鉴权上下文取,不信任 URL 参数。
      */
     @GetMapping("/conversations")
-    public ConversationListDto listConversations(@RequestParam("userId") String userId) {
+    public ConversationListDto listConversations(HttpServletRequest request) {
+        String userId = AuthContext.currentUserId(request);
         return messageQueryService.listConversations(userId);
     }
 }

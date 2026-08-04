@@ -33,8 +33,10 @@ async function registerOrLogin(username, password) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+let dispatchToken = null; // 登录后存,dispatch 鉴权用
+
 async function dispatch() {
-  return (await (await fetch(API + '/api/connects')).json());
+  return (await (await fetch(API + '/api/connects', { headers: { Authorization: 'Bearer ' + dispatchToken } })).json());
 }
 
 function connectTo(host, port, { token, deviceId }) {
@@ -54,6 +56,7 @@ async function main() {
   const names = ['lbA', 'lbB', 'lbC', 'lbD', 'lbE', 'lbF', 'lbG'];
   const users = [];
   for (const n of names) users.push(await registerOrLogin(n, 'pass123'));
+  dispatchToken = users[0].token; // 存 token,dispatch 鉴权用
 
   // 1. 3 个用户连 19001,19002 空着
   console.log('[1] 3 个用户连 19001...');
