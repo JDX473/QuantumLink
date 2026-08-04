@@ -71,6 +71,7 @@ public class MessageQueryService {
             item.setMsgType(m.getMsgType());
             item.setContent(m.getContent());
             item.setServerTime(m.getServerTime());
+            item.setStatus(m.getStatus());
             items.add(item);
         }
 

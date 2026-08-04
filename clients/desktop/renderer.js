@@ -194,7 +194,9 @@ async function openConversation(conversationId, peerUserId, peerUsername) {
   // 增量拉取该会话所有消息(从 seq=0 开始,MVP 简单拉全量)
   const data = await api.pullMessages({ conversationId, afterSeq: 0 });
   for (const m of (data.messages || [])) {
-    renderMessage(m, 'delivered');
+    // 根据消息实际状态渲染:SENT=已存储 / DELIVERED=对方已送达
+    // (不能固定 delivered,否则给离线用户发的消息也会显示"已送达")
+    renderMessage(m, m.status === 'DELIVERED' ? 'delivered' : 'stored');
   }
   convMessages.set(conversationId, data.messages || []);
 }
