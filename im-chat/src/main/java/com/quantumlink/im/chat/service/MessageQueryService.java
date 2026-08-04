@@ -62,12 +62,29 @@ public class MessageQueryService {
         }
 
         List<MessagePageDto.MessageItem> items = new ArrayList<>(rows.size());
+        // 批量取发送者资料(一次查完,避免逐条查 DB)
+        Set<String> senderIds = new HashSet<>();
+        for (Message m : rows) senderIds.add(m.getSenderId());
+        Map<String, User> senderMap = new java.util.HashMap<>();
+        if (!senderIds.isEmpty()) {
+            List<User> senders = userMapper.selectList(
+                    new LambdaQueryWrapper<User>().in(User::getUserId, senderIds));
+            for (User u : senders) senderMap.put(u.getUserId(), u);
+        }
+
         for (Message m : rows) {
             MessagePageDto.MessageItem item = new MessagePageDto.MessageItem();
             item.setServerMsgId(m.getId());
             item.setSeq(m.getSeq());
             item.setConversationId(m.getConversationId());
             item.setSenderId(m.getSenderId());
+            // 填充发送者资料(UI 显示头像/名字;与下行推送的 fillSenderProfile 一致,
+            // 否则"在线推送有头像、重进会话拉取没头像")
+            User sender = senderMap.get(m.getSenderId());
+            if (sender != null) {
+                item.setSenderName(sender.getUsername());
+                item.setSenderAvatar(sender.getAvatarUrl());
+            }
             item.setMsgType(m.getMsgType());
             item.setContent(m.getContent());
             item.setServerTime(m.getServerTime());
