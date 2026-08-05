@@ -132,6 +132,12 @@
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.2.5</version>
                 </plugin>
+                <!-- 覆盖率:JaCoCo,mvn test 后生成 target/site/jacoco/index.html -->
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>0.8.12</version>
+                </plugin>
             </plugins>
         </pluginManagement>
     </build>

@@ -99,4 +99,50 @@ class ChannelManagerTest {
         assertEquals(n, ChannelManager.deviceCount(userId), "并发加设备不应丢失任何一条");
         ChannelManager.removeAll(userId);
     }
+
+    @Test
+    void size_countsAllDevicesAcrossUsers() {
+        ChannelManager.add("uA", "d1", new EmbeddedChannel());
+        ChannelManager.add("uA", "d2", new EmbeddedChannel());
+        ChannelManager.add("uB", "d1", new EmbeddedChannel());
+        assertEquals(3, ChannelManager.size());
+        ChannelManager.removeAll("uA");
+        ChannelManager.removeAll("uB");
+        assertEquals(0, ChannelManager.size());
+    }
+
+    @Test
+    void size_empty() {
+        assertEquals(0, ChannelManager.size());
+    }
+
+    @Test
+    void get_unknownUserOrDevice_returnsNull() {
+        assertNull(ChannelManager.get("nobody", "nope"));
+        ChannelManager.add("uX", "d1", new EmbeddedChannel());
+        assertNull(ChannelManager.get("uX", "d2"));
+        assertNull(ChannelManager.get("uY", "d1"));
+        ChannelManager.removeAll("uX");
+    }
+
+    @Test
+    void removeAll_unknownUser_noop() {
+        ChannelManager.removeAll("nobody"); // 不应抛异常
+    }
+
+    @Test
+    void remove_unknownDevice_noop() {
+        ChannelManager.add("uZ", "d1", new EmbeddedChannel());
+        ChannelManager.remove("uZ", "d2"); // 不存在,不应抛
+        assertEquals(1, ChannelManager.deviceCount("uZ"));
+        ChannelManager.removeAll("uZ");
+    }
+
+    @Test
+    void add_sameDevice_overwrites() {
+        ChannelManager.add("uW", "d1", new EmbeddedChannel());
+        ChannelManager.add("uW", "d1", new EmbeddedChannel());
+        assertEquals(1, ChannelManager.deviceCount("uW"));
+        ChannelManager.removeAll("uW");
+    }
 }

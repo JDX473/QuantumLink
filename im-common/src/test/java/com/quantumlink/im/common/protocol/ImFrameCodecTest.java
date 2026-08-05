@@ -1,5 +1,6 @@
 package com.quantumlink.im.common.protocol;
 
+import com.quantumlink.im.common.ImConstants;
 import com.quantumlink.im.common.util.ProtocolUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -110,5 +111,40 @@ class ImFrameCodecTest {
         assertNotNull(in);
         MessagePayload decoded = ProtocolUtil.parseBody(in, MessagePayload.class);
         assertEquals("half-packet-test", decoded.getContent());
+    }
+
+    @Test
+    void badMagic_throws() {
+        // 前 4 字节不是 QNLC → 解码器抛异常(拒绝垃圾帧)
+        EmbeddedChannel ch = new EmbeddedChannel(new ImFrameDecoder());
+        ByteBuf bad = Unpooled.buffer();
+        bad.writeInt(0xDEADBEEF);
+        bad.writeByte(1).writeByte(1).writeInt(0).writeInt(0); // 剩余头 + 空 body + crc
+        assertThrows(Exception.class, () -> ch.writeInbound(bad));
+    }
+
+    @Test
+    void badCrc_throws() {
+        // 正确 magic 但 CRC 错 → 抛异常
+        EmbeddedChannel ch = new EmbeddedChannel(new ImFrameDecoder());
+        ByteBuf bad = Unpooled.buffer();
+        bad.writeInt(ImConstants.MAGIC);
+        bad.writeByte(ImConstants.VERSION).writeByte(1).writeInt(1);
+        bad.writeByte('x');
+        bad.writeInt(0x12345678); // 错误 CRC
+        assertThrows(Exception.class, () -> ch.writeInbound(bad));
+    }
+
+    @Test
+    void tinyBody_roundTrip() {
+        // 极小 body(1 字节)往返
+        EmbeddedChannel ch = new EmbeddedChannel(new ImFrameEncoder(), new ImFrameDecoder());
+        ImFrame out = ProtocolUtil.buildFrame(FrameType.PING, new byte[]{42});
+        ch.writeOutbound(out);
+        ch.writeInbound((ByteBuf) ch.readOutbound());
+        ImFrame in = ch.readInbound();
+        assertNotNull(in);
+        assertEquals(FrameType.PING, in.getType());
+        assertArrayEquals(new byte[]{42}, in.getBody());
     }
 }
