@@ -28,3 +28,9 @@ application-local.yml
 # 运行时临时日志
 /tmp-*.log
 /tmp-*.err
+
+# Redis 数据文件(误写入工作目录)
+appendonly.aof
+dump.rdb
+*.rdb
+*.aof
