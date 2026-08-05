@@ -13,10 +13,8 @@ import io.netty.channel.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 消息调度器:连接层的业务入口。
@@ -40,13 +38,43 @@ public class MessageDispatcher {
     private final SessionRegistry sessionRegistry;
     private final UpstreamProducer upstreamProducer;
 
-    /** per-会话串行执行器:conversationId → 单线程 executor,按 FIFO 依次 produce */
-    private final ConcurrentHashMap<String, ExecutorService> conversationExecutors = new ConcurrentHashMap<>();
-    private final AtomicInteger executorSeq = new AtomicInteger(0);
+    /**
+     * 共享有界线程池(按会话 hash 路由到固定线程)。
+     *
+     * <p>为什么不用"每会话一个单线程 executor":会话是动态的,executor 只建不回收,
+     * 线程数随历史会话数无限增长 → 压测 200 连接线程爆炸(439 线程)。
+     *
+     * <p>为什么 hash 路由仍保序:同一 conversationId 的 hashCode 确定 → 永远路由到
+     * 同一槽位线程 → 该线程 FIFO 串行执行 → 发送顺序 = 到达顺序。不同会话可能
+     * 碰撞到同一线程,只损失并行度,不影响各自会话内的顺序。
+     *
+     * <p>注意:线程池大小必须固定,不能扩缩——取模基数变化会导致同一会话被路由到
+     * 不同线程 → 并发处理 → 乱序。
+     */
+    private final ExecutorService[] conversationExecutors;
+    private final int poolSize;
 
     public MessageDispatcher(SessionRegistry sessionRegistry, UpstreamProducer upstreamProducer) {
         this.sessionRegistry = sessionRegistry;
         this.upstreamProducer = upstreamProducer;
+        // 固定线程数:CPU×2(与 bizThreads 一致);有界、不随会话增长
+        this.poolSize = Math.max(2, Runtime.getRuntime().availableProcessors() * 2);
+        this.conversationExecutors = new ExecutorService[poolSize];
+        for (int i = 0; i < poolSize; i++) {
+            final int idx = i;
+            this.conversationExecutors[i] = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "conv-slot-" + idx);
+                t.setDaemon(true);
+                return t;
+            });
+        }
+        log.info("conversation executor pool initialized: {} slots", poolSize);
+    }
+
+    /** 会话 → 固定槽位:同一会话永远路由到同一线程 */
+    private ExecutorService executorFor(String conversationId) {
+        int slot = Math.floorMod(conversationId.hashCode(), poolSize);
+        return conversationExecutors[slot];
     }
 
     /**
@@ -70,13 +98,8 @@ public class MessageDispatcher {
             payload.setConversationId(conversationId);
         }
 
-        // 取该会话的串行执行器(不存在则创建单线程 executor)
-        ExecutorService executor = conversationExecutors.computeIfAbsent(conversationId,
-                k -> Executors.newSingleThreadExecutor(r -> {
-                    Thread t = new Thread(r, "conv-" + k.substring(0, Math.min(8, k.length())) + "-" + executorSeq.incrementAndGet());
-                    t.setDaemon(true);
-                    return t;
-                }));
+        // 路由到固定槽位线程:同一会话永远同一线程(FIFO 保序),线程数固定不增长
+        ExecutorService executor = executorFor(conversationId);
 
         // 提交到 FIFO 队列:按到达顺序串行 produce(不同会话并行)
         String json = JsonUtil.toJson(payload);

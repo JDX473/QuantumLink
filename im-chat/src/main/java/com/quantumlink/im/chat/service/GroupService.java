@@ -54,6 +54,7 @@ public class GroupService {
     private final UserMapper userMapper;
     private final StringRedisTemplate redisTemplate;
     private final DownstreamProducer downstreamProducer;
+    private final UserCacheService userCacheService;
 
     /** 群维度 seq 发号 key(Redis INCR,与单聊会话 seq 同构) */
     private static final String GROUP_SEQ_PREFIX = "im:group_seq:";
@@ -252,11 +253,10 @@ public class GroupService {
         return last == null ? 0 : last.getSeq();
     }
 
-    /** 填充发送者用户名 + 头像(与单聊 fillSenderProfile 一致) */
+    /** 填充发送者用户名 + 头像(与单聊 fillSenderProfile 一致);走用户资料缓存 */
     private void fillSenderProfile(MessagePayload payload) {
         try {
-            User sender = userMapper.selectOne(
-                    new LambdaQueryWrapper<User>().eq(User::getUserId, payload.getSenderId()));
+            UserCacheService.UserView sender = userCacheService.getUser(payload.getSenderId());
             if (sender != null) {
                 payload.setSenderName(sender.getUsername());
                 payload.setSenderAvatar(sender.getAvatarUrl());
