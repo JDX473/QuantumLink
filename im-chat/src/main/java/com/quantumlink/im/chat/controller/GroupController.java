@@ -26,10 +26,35 @@ public class GroupController {
 
     private final GroupService groupService;
 
+    /**
+     * 面对面建群:输入 4 位数字,加入该数字当前 5 分钟窗口的群(没有则创建)。
+     * 并发输入同数字原子建群(Lua),时间窗口 Redis TTL 实现。
+     */
+    @PostMapping("/face2face")
+    public Map<String, Object> face2face(@RequestBody Map<String, Object> req, HttpServletRequest request) {
+        String code = (String) req.get("code");
+        Map<String, Object> resp = new HashMap<>();
+        // 校验:4 位数字
+        if (code == null || !code.matches("\\d{4}")) {
+            resp.put("success", false);
+            resp.put("message", "code must be 4 digits");
+            return resp;
+        }
+        try {
+            Map<String, Object> joined = groupService.joinByCode(code, AuthContext.currentUserId(request));
+            resp.put("success", true);
+            resp.putAll(joined);
+            return resp;
+        } catch (IllegalStateException e) {
+            resp.put("success", false);
+            resp.put("message", e.getMessage());
+            return resp;
+        }
+    }
+
     /** 创建群:name + members(初始成员,群主自动加入);群主从鉴权上下文取 */
     @PostMapping
-    public Map<String, Object> createGroup(@RequestBody Map<String, Object> req, HttpServletRequest request) {
-        String name = (String) req.get("name");
+    public Map<String, Object> createGroup(@RequestBody Map<String, Object> req, HttpServletRequest request) {        String name = (String) req.get("name");
         String ownerId = AuthContext.currentUserId(request); // 群主 = 当前登录用户,不信任参数
         @SuppressWarnings("unchecked")
         List<String> members = (List<String>) req.getOrDefault("members", List.of());

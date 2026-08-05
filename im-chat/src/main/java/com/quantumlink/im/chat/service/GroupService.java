@@ -66,6 +66,22 @@ public class GroupService {
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 200;
 
+    /** 面对面建群:数字 → 群 映射 key(5 分钟窗口,TTL 到期自动释放数字) */
+    private static final String F2F_PREFIX = "im:f2f:";
+    private static final long F2F_TTL_SECONDS = 300;
+    /** 面对面建群成员上限 */
+    private static final int F2F_MAX_MEMBERS = 200;
+
+    /**
+     * Lua 原子查/建:先到者建群写 key,后到者复用。
+     * Redis 单线程执行,并发输入同数字不会建两个群。
+     */
+    private static final String F2F_LUA =
+            "local gid = redis.call('GET', KEYS[1]) " +
+            "if gid then return {'EXIST', gid} end " +
+            "redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2]) " +
+            "return {'CREATE', ARGV[1]}";
+
     // ==================== 群管理 ====================
 
     /** 创建群:群主 + 初始成员 */
@@ -99,6 +115,57 @@ public class GroupService {
         m.setUserId(userId);
         m.setRole(role == null ? "MEMBER" : role);
         memberMapper.insert(m);
+    }
+
+    /**
+     * 面对面建群:输入 4 位数字,加入该数字当前窗口的群(5 分钟)。
+     *
+     * <p>核心:Lua 原子"查/建"——Redis 单线程执行,并发输入同数字
+     * 只会建一个群(先到者 CREATE,后到者 EXIST 复用)。时间窗口靠
+     * key TTL 实现(到期自动释放数字,无需定时任务)。
+     *
+     * @param code   4 位数字
+     * @param userId 当前用户
+     * @return 结果 { groupId, name, isNewGroup };满员/非法返回 null 或抛异常
+     */
+    public Map<String, Object> joinByCode(String code, String userId) {
+        // ① 生成新群 id(若需要新建)
+        String newGroupId = "g_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+
+        // ② Lua 原子查/建:EXIST(已有群)或 CREATE(新建)
+        //    返回类型必须 List.class——Object.class 会把 multi-bulk 误解析成单值
+        Object result = redisTemplate.execute(
+                new org.springframework.data.redis.core.script.DefaultRedisScript<>(F2F_LUA, List.class),
+                java.util.Collections.singletonList(F2F_PREFIX + code),
+                newGroupId, String.valueOf(F2F_TTL_SECONDS));
+
+        List<?> r = result instanceof List ? (List<?>) result : java.util.Collections.emptyList();
+        String action = r.size() > 0 ? String.valueOf(r.get(0)) : "";
+        String groupId = r.size() > 1 ? String.valueOf(r.get(1)) : newGroupId;
+        boolean isNew = "CREATE".equals(action);
+
+        // ③ 新建:创建群(自动命名"面对面建群 {code}"),owner = 第一个用户
+        if (isNew) {
+            createGroup("面对面建群 " + code, userId, java.util.Collections.emptyList());
+            log.info("face2face group created: code={} groupId={} owner={}", code, groupId, userId);
+        }
+
+        // ④ 人数上限校验(除自己外是否已满)
+        List<String> members = listMemberIds(groupId);
+        if (!members.contains(userId) && members.size() >= F2F_MAX_MEMBERS) {
+            throw new IllegalStateException("group is full: " + groupId);
+        }
+
+        // ⑤ 加入(幂等,已在群则忽略)
+        addMember(groupId, userId, "MEMBER");
+
+        // ⑥ 返回
+        Group group = getGroup(groupId);
+        Map<String, Object> resp = new java.util.HashMap<>();
+        resp.put("groupId", groupId);
+        resp.put("name", group != null ? group.getName() : "面对面建群 " + code);
+        resp.put("isNewGroup", isNew);
+        return resp;
     }
 
     /** 踢人出群 */

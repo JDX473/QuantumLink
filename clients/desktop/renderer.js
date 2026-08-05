@@ -441,6 +441,24 @@ $('#btn-new-group-ok').addEventListener('click', async () => {
   }
 });
 
+// 面对面建群:输入 4 位数字,加入/创建该数字窗口的群
+$('#btn-new-f2f-ok').addEventListener('click', async () => {
+  const code = $('#new-f2f-code').value.trim();
+  const err = $('#new-conv-error');
+  if (!/^\d{4}$/.test(code)) { err.textContent = '请输入 4 位数字'; return; }
+  try {
+    const joined = await api.face2face({ code });
+    if (!joined.success) { err.textContent = joined.message || '加入失败'; return; }
+    $('#new-conv-modal').classList.add('hidden');
+    $('#new-f2f-code').value = '';
+    await loadConversations();
+    await openConversation(joined.groupId, null, joined.name, true);
+    $('#composer-input').focus();
+  } catch (ex) {
+    err.textContent = ex.message || '面对面建群失败';
+  }
+});
+
 // 断开
 $('#btn-logout').addEventListener('click', async () => {
   await api.close();

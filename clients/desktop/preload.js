@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('quantumlink', {
   send: (msg) => ipcRenderer.invoke('chat:send', msg),
   // 群聊
   createGroup: (info) => ipcRenderer.invoke('groups:create', info),
+  face2face: (info) => ipcRenderer.invoke('groups:face2face', info),
   listGroups: (info) => ipcRenderer.invoke('groups:list', info),
   pullGroupMessages: (info) => ipcRenderer.invoke('groups:pull', info),
 
