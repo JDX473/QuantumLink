@@ -145,7 +145,7 @@ public class MessageService {
 
             // ③ 下行推送:把 serverMsgId + seq + 发送者资料填回 payload
             //    senderName/senderAvatar 供 UI 显示(头像+名字),不暴露 userId
-            payload.setServerMsgId(message.getId());
+            payload.setServerMsgId(String.valueOf(message.getId()));
             payload.setSeq(seq);
             payload.setServerTime(message.getServerTime());
             fillSenderProfile(payload);
@@ -188,7 +188,7 @@ public class MessageService {
         AckPayload ack = new AckPayload();
         ack.setAckType(AckType.STORE);
         ack.setClientMsgId(payload.getClientMsgId());
-        ack.setServerMsgId(serverMsgId);
+        ack.setServerMsgId(String.valueOf(serverMsgId));
         ack.setSeq(seq);
         ack.setReceiverId(payload.getReceiverId());
         ack.setConversationId(payload.getConversationId());

@@ -34,7 +34,7 @@ public class MessagePayload {
     private String content;
 
     /** 服务端落库时生成的消息正式身份(下行带回) */
-    private Long serverMsgId;
+    private String serverMsgId;
 
     /** 服务端生成的会话内单调序号(下行带回) */
     private Long seq;

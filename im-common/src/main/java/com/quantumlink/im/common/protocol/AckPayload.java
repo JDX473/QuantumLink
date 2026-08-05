@@ -19,7 +19,7 @@ public class AckPayload {
     private String clientMsgId;
 
     /** 引用哪条消息(serverMsgId) */
-    private Long serverMsgId;
+    private String serverMsgId;
 
     /** 该消息的会话内序号 */
     private Long seq;

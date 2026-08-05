@@ -18,7 +18,8 @@ import lombok.Data;
 @Data
 @TableName("im_group_message")
 public class GroupMessage {
-    @TableId(type = IdType.AUTO)
+    /** 主键 = server_msg_id。用雪花(ASSIGN_ID):多 chat 实例写消息需全局唯一 */
+    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
     /** 客户端生成,幂等去重键 */

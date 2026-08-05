@@ -9,7 +9,7 @@ import lombok.Setter;
 @Getter
 @Setter
 public class GroupMessageItemDto {
-    private Long serverMsgId;
+    private String serverMsgId;
     private Long seq;
     private String groupId;
     private String senderId;

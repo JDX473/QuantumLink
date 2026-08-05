@@ -76,13 +76,21 @@ public class DeliverAckConsumer {
         }
 
         // ① 更新消息状态:SENT → DELIVERED(接收方已收到)
-        int updated = messageMapper.markDelivered(ack.getServerMsgId());
+        //    serverMsgId 下发为 String(避免 JS 精度丢失),这里转回 Long 做 DB 操作
+        Long serverMsgId;
+        try {
+            serverMsgId = Long.parseLong(ack.getServerMsgId());
+        } catch (NumberFormatException e) {
+            log.warn("bad serverMsgId: {}", ack.getServerMsgId());
+            return;
+        }
+        int updated = messageMapper.markDelivered(serverMsgId);
         if (updated == 0) {
             log.warn("mark delivered no-op (maybe already delivered): serverMsgId={}", ack.getServerMsgId());
         }
 
         // ② 查消息,拿 senderId(发送方 A),回 DELIVER 给 A
-        Message message = messageMapper.selectById(ack.getServerMsgId());
+        Message message = messageMapper.selectById(serverMsgId);
         if (message == null) {
             log.warn("message not found: serverMsgId={}", ack.getServerMsgId());
             return;
@@ -92,7 +100,7 @@ public class DeliverAckConsumer {
         AckPayload deliver = new AckPayload();
         deliver.setAckType(AckType.DELIVER);
         deliver.setClientMsgId(message.getClientMsgId());
-        deliver.setServerMsgId(message.getId());
+        deliver.setServerMsgId(String.valueOf(message.getId()));
         deliver.setSeq(message.getSeq());
         deliver.setReceiverId(message.getReceiverId());
         deliver.setConversationId(message.getConversationId());
