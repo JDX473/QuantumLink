@@ -46,9 +46,9 @@ CREATE TABLE IF NOT EXISTS `im_conversation` (
     UNIQUE KEY `uk_conversation_id` (`conversation_id`)
 ) ENGINE = InnoDB COMMENT = '会话';
 
--- 消息表:主键自增即 server_msg_id;client_msg_id 客户端生成(幂等去重键)
+-- 消息表:主键 server_msg_id 由应用雪花生成(多 chat 实例全局唯一,不用 DB 自增)
 CREATE TABLE IF NOT EXISTS `im_message` (
-    `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键自增,即 server_msg_id',
+    `id`              BIGINT UNSIGNED NOT NULL COMMENT '主键=server_msg_id,应用雪花生成(ASSIGN_ID)',
     `client_msg_id`   VARCHAR(128) NOT NULL COMMENT '客户端生成(device_id+自增),幂等去重键',
     `conversation_id` VARCHAR(128) NOT NULL,
     `sender_id`       VARCHAR(64)  NOT NULL,
@@ -88,9 +88,10 @@ CREATE TABLE IF NOT EXISTS `im_group_member` (
 ) ENGINE = InnoDB COMMENT = '群成员';
 
 -- 群消息表:与单聊表分离(分库分表时群按 group_id 分片)
+-- 主键 server_msg_id 由应用雪花生成(多 chat 实例全局唯一)
 -- 群消息不回 DELIVER(无"对方已送达"),status 恒 SENT
 CREATE TABLE IF NOT EXISTS `im_group_message` (
-    `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键自增,即 server_msg_id',
+    `id`            BIGINT UNSIGNED NOT NULL COMMENT '主键=server_msg_id,应用雪花生成(ASSIGN_ID)',
     `client_msg_id` VARCHAR(128) NOT NULL COMMENT '客户端生成,幂等去重键',
     `group_id`      VARCHAR(64)  NOT NULL,
     `sender_id`     VARCHAR(64)  NOT NULL,

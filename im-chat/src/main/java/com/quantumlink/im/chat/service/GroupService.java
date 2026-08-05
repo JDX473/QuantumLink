@@ -184,7 +184,7 @@ public class GroupService {
         List<String> memberIds = listMemberIds(groupId);
         memberIds.remove(payload.getSenderId()); // 发送者自己不回推(本地已展示)
         if (!memberIds.isEmpty()) {
-            payload.setServerMsgId(gm.getId());
+            payload.setServerMsgId(String.valueOf(gm.getId()));
             payload.setSeq(seq);
             payload.setServerTime(gm.getServerTime());
             fillSenderProfile(payload);
@@ -195,7 +195,7 @@ public class GroupService {
         AckPayload ack = new AckPayload();
         ack.setAckType(AckType.STORE);
         ack.setClientMsgId(payload.getClientMsgId());
-        ack.setServerMsgId(gm.getId());
+        ack.setServerMsgId(String.valueOf(gm.getId()));
         ack.setSeq(seq);
         ack.setConversationId(groupId);
         downstreamProducer.sendEnvelope(payload.getSenderId(), null, DownstreamEnvelope.TYPE_ACK, ack);
@@ -225,7 +225,7 @@ public class GroupService {
         List<GroupMessageItemDto> items = new ArrayList<>(rows.size());
         for (GroupMessage m : rows) {
             GroupMessageItemDto item = new GroupMessageItemDto();
-            item.setServerMsgId(m.getId());
+            item.setServerMsgId(String.valueOf(m.getId()));
             item.setSeq(m.getSeq());
             item.setGroupId(m.getGroupId());
             item.setSenderId(m.getSenderId());

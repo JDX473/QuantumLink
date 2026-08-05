@@ -12,7 +12,8 @@ import lombok.Data;
 @TableName("im_message")
 public class Message {
     /** 主键自增,即 server_msg_id */
-    @TableId(type = IdType.AUTO)
+    /** 主键 = server_msg_id。用雪花(ASSIGN_ID):多 chat 实例写消息需全局唯一,DB 自增会撞 */
+    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
     /** 客户端生成(device_id+自增),幂等去重键 */

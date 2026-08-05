@@ -27,7 +27,7 @@ public class MessagePageDto {
     @Getter
     @Setter
     public static class MessageItem {
-        private Long serverMsgId;
+        private String serverMsgId;
         private Long seq;
         private String conversationId;
         private String senderId;

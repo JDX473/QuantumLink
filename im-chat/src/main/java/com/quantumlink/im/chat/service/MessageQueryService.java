@@ -74,7 +74,7 @@ public class MessageQueryService {
 
         for (Message m : rows) {
             MessagePageDto.MessageItem item = new MessagePageDto.MessageItem();
-            item.setServerMsgId(m.getId());
+            item.setServerMsgId(String.valueOf(m.getId()));
             item.setSeq(m.getSeq());
             item.setConversationId(m.getConversationId());
             item.setSenderId(m.getSenderId());

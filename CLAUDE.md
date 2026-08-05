@@ -35,6 +35,10 @@ QuantumLink:27 届秋招主项目,Java 后端深度 IM。从 0 写,目标是撑�
   - **会话表查询必须用设备 Set,不用 keys 扫描**:`keys("im:session:{uid}:*")` 是 O(N) 全库扫描 + 阻塞单线程 Redis(压测曾 1 分钟超时)。connect 写时 `SADD im:devices:{uid}` + `SET im:session:{uid}:{dev}`,chat 读时 `SMEMBERS im:devices:{uid}` + 逐个 GET(O(1))。nodeId 三处一致原则不变。
   - **fillSenderProfile 必须走用户缓存**:chat 每条消息查 User 表(压测 chat CPU 57% 的一部分)→ 改 `UserCacheService`(Redis `im:user:{uid}` 只缓存 username/avatarUrl,TTL 10min,改头像 invalidate)。**坑**:不能序列化整个 User(LocalDateTime 字段 JsonUtil 序列化失败),只存 UI 字段。
   - **压测客户端必须 quiet + 多进程**:client-core 的 console.log 在 700 条/秒下阻塞 Node 事件循环(30 连接延迟 6 倍恶化);单 Node 进程压 30 连接是客户端瓶颈,压测须多进程分散。
+- **chat 多实例 + 雪花主键(2026-08-05)**:
+  - **chat 多实例开箱即用**:RocketMQ 同 group 自动分摊队列、Redis INCR 发号天然并发安全、幂等双保险扛并发、会话表/用户缓存共享。实例稳定后同会话 seq 严格有序(connect 按会话 hash 选队列 + Orderly 串行消费)。**已知边界**:实例增减瞬间 rebalance 可能瞬时乱序(队列消费权切换,两实例并发取号)——生产可接受,客户端按 seq 排序 + 增量拉取自愈。
+  - **消息主键必须用雪花(ASSIGN_ID)**:多 chat 实例写 im_message/im_group_message,DB 自增会撞主键。`@TableId(type = IdType.ASSIGN_ID)`(MyBatis-Plus 内置雪花),schema/表去掉 AUTO_INCREMENT。user/device/conversation 低频写保留自增。
+  - **serverMsgId 必须 String 下发**:19 位雪花 id 超过 JS Number 安全范围(2^53),Long 下发客户端丢精度(两个不同 id 显示相同、比较错乱)。协议字段 Long → String,`String.valueOf(id)` 下发;服务端 DB 操作(Long.parseLong)在 DeliverAckConsumer。
 - **头像(MinIO)**:注册可选头像(`/api/auth/register/avatar` multipart)、改头像(`/api/users/{userId}/avatar`),im_user.avatar_url。**消息下行带 senderName+senderAvatar,UI 只显示头像+名字不暴露 userId**(内部仍带 senderId)。配置 key 用 `minio.accessKey`(不是 access-key,避免与系统环境变量 MINIO_ACCESS_KEY 冲突)。MinIO 本地 F:\Study\MinIO,新数据目录 quantumlink-data,凭证 minioadmin。
 - **有序 seq**:服务端落库同一事务内 `UPDATE im_conversation SET last_seq=last_seq+1` 分配;不用 Redis INCR。
 - **可靠投递**:双 ACK——**STORE**(chat 落库,可靠锚点)+ **DELIVER**(接收方客户端回 DELIVER_ACK 帧 → connect 转发 deliver_ack topic → chat 更新状态 SENT→DELIVERED → 回 DELIVER 给发送方)。发送方超时同一 client_msg_id 重传(3s 超时、指数退避、上限 6 次)。
