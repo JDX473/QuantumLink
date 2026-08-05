@@ -189,6 +189,16 @@ ipcMain.handle('groups:create', async (_e, { name, members }) => {
   return res.json();
 });
 
+/** 面对面建群:输入 4 位数字,加入/创建该数字窗口的群 */
+ipcMain.handle('groups:face2face', async (_e, { code }) => {
+  const res = await authFetch('http://127.0.0.1:8081/api/groups/face2face', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  return res.json();
+});
+
 /** 我的群列表(服务端从鉴权上下文取 userId) */
 ipcMain.handle('groups:list', async () => {
   const res = await authFetch('http://127.0.0.1:8081/api/groups');
