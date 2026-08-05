@@ -38,6 +38,9 @@ class ImClient {
     this.deviceId = opts.deviceId;
     this.deviceType = opts.deviceType || 'desktop';
     this.handlers = opts.handlers || {};
+    // 静默模式:压测/高负载时关闭 console.log,避免日志阻塞 EventLoop 拖慢客户端
+    this.quiet = !!opts.quiet;
+    this.log = (msg) => { if (!this.quiet) console.log(msg); };
 
     this.socket = null;
     this.decoder = new FrameDecoder();
@@ -117,7 +120,7 @@ class ImClient {
   _onHandshakeAck(body) {
     if (body.success) {
       this.authenticated = true;
-      console.log(`[client] 握手成功, userId=${body.userId}`);
+      this.log(`[client] 握手成功, userId=${body.userId}`);
       if (this.handlers.onConnected) this.handlers.onConnected(body.userId);
       this._startHeartbeat();
       // 判断是否重连:首次连接(everConnected=false)后置 true;重连时 it's already true
@@ -160,7 +163,7 @@ class ImClient {
       if (item) {
         this.pending.delete(ack.clientMsgId);
         if (item.timer) clearTimeout(item.timer);
-        console.log(`[client] 消息确认: clientMsgId=${ack.clientMsgId} serverMsgId=${ack.serverMsgId} seq=${ack.seq}`);
+        this.log(`[client] 消息确认: clientMsgId=${ack.clientMsgId} serverMsgId=${ack.serverMsgId} seq=${ack.seq}`);
         if (this.handlers.onAck) this.handlers.onAck(ack);
         return;
       }
@@ -204,12 +207,12 @@ class ImClient {
   _sendWithRetry(item) {
     if (!this.connected) {
       // 未连接:pending 保留,重连成功后 flush
-      console.log(`[client] 未连接,消息排队待发: ${item.clientMsgId}`);
+      this.log(`[client] 未连接,消息排队待发: ${item.clientMsgId}`);
       return;
     }
     const ok = this.sendFrame(FrameType.MSG, item.payload);
     if (ok) {
-      console.log(`[client] 发送(第${item.attempts + 1}次): ${item.clientMsgId}`);
+      this.log(`[client] 发送(第${item.attempts + 1}次): ${item.clientMsgId}`);
     }
 
     // 安排重传定时器
@@ -286,7 +289,7 @@ class ImClient {
         }
       }
       if (data.messages && data.messages.length > 0) {
-        console.log(`[client] 增量拉取 ${conversationId}: ${data.messages.length} 条(afterSeq=${afterSeq}, serverMax=${data.serverMaxSeq})`);
+        this.log(`[client] 增量拉取 ${conversationId}: ${data.messages.length} 条(afterSeq=${afterSeq}, serverMax=${data.serverMaxSeq})`);
       }
       // 有更多则继续拉
       if (data.hasMore) {

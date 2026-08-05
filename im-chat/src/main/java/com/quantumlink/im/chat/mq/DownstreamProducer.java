@@ -38,6 +38,9 @@ public class DownstreamProducer {
     /** Redis 会话表前缀(与 connect SessionRegistry 共用同一 key) */
     private static final String SESSION_PREFIX = "im:session:";
 
+    /** 设备 Set 前缀(与 connect SessionRegistry 共用;查在线用,替代 keys 扫描) */
+    private static final String DEVICES_PREFIX = "im:devices:";
+
     private final StringRedisTemplate redisTemplate;
 
     private final DefaultMQProducer producer = new DefaultMQProducer("im-chat-producer");
@@ -92,17 +95,11 @@ public class DownstreamProducer {
         // 按 nodeId 分组:nodeId → 该节点上的成员列表
         java.util.Map<String, java.util.List<String>> byNode = new java.util.LinkedHashMap<>();
         for (String uid : targetUserIds) {
-            // 查会话表定位该用户节点(多端全推:任一在线设备即可,同一用户多端同节点)
-            var keys = redisTemplate.keys(SESSION_PREFIX + uid + ":*");
-            if (keys == null || keys.isEmpty()) {
+            // 查设备 Set 定位该用户节点(O(1),替代 keys 全库扫描;多端任一设备即可)
+            String nodeId = nodeOf(uid);
+            if (nodeId == null) {
                 continue; // 离线成员:不推送,上线拉取
             }
-            String nodeId = null;
-            for (Object k : keys) {
-                String v = redisTemplate.opsForValue().get((String) k);
-                if (v != null) { nodeId = v; break; }
-            }
-            if (nodeId == null) continue;
             byNode.computeIfAbsent(nodeId, k -> new java.util.ArrayList<>()).add(uid);
         }
 
@@ -123,6 +120,21 @@ public class DownstreamProducer {
         }
     }
 
+    /** 查用户任一在线设备的节点(im:devices:{uid} SMEMBERS → 逐个 GET 会话),null=离线 */
+    private String nodeOf(String userId) {
+        java.util.Set<String> devices = redisTemplate.opsForSet().members(DEVICES_PREFIX + userId);
+        if (devices == null || devices.isEmpty()) {
+            return null;
+        }
+        for (String deviceId : devices) {
+            String nodeId = redisTemplate.opsForValue().get(SESSION_PREFIX + userId + ":" + deviceId);
+            if (nodeId != null) {
+                return nodeId;
+            }
+        }
+        return null;
+    }
+
     /**
      * 发送下行消息,查会话表定位目标节点并打 tag。
      *
@@ -132,16 +144,12 @@ public class DownstreamProducer {
      */
     private void send(String json, String targetUserId, String targetDeviceId) {
         // 查 Redis 会话表定位目标节点:im:session:{userId}:{deviceId} → nodeId
-        String sessionKey = SESSION_PREFIX + targetUserId + ":";
         String nodeId = null;
         if (targetDeviceId != null) {
-            nodeId = redisTemplate.opsForValue().get(sessionKey + targetDeviceId);
+            nodeId = redisTemplate.opsForValue().get(SESSION_PREFIX + targetUserId + ":" + targetDeviceId);
         } else {
-            // 多端全推:查该用户所有设备的会话(扫描 im:session:{userId}:*)
-            var keys = redisTemplate.keys(sessionKey + "*");
-            if (keys != null && !keys.isEmpty()) {
-                nodeId = redisTemplate.opsForValue().get(keys.iterator().next());
-            }
+            // 多端全推:查设备 Set 任一在线设备(O(1),替代 keys 扫描)
+            nodeId = nodeOf(targetUserId);
         }
 
         if (nodeId == null) {

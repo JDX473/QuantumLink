@@ -55,6 +55,7 @@ public class MessageService {
     private final StringRedisTemplate redisTemplate;
     private final DownstreamProducer downstreamProducer;
     private final GroupService groupService;
+    private final UserCacheService userCacheService;
 
     /** 并发段线程池:绑定 seq 后的落库/ACK/推送,可全并行 */
     private final ExecutorService asyncExecutor = Executors.newFixedThreadPool(
@@ -157,11 +158,10 @@ public class MessageService {
         }
     }
 
-    /** 填充发送者用户名 + 头像(用于 UI 显示,不暴露 userId) */
+    /** 填充发送者用户名 + 头像(用于 UI 显示,不暴露 userId);走用户资料缓存避免每条查 DB */
     private void fillSenderProfile(MessagePayload payload) {
         try {
-            User sender = userMapper.selectOne(
-                    new LambdaQueryWrapper<User>().eq(User::getUserId, payload.getSenderId()));
+            UserCacheService.UserView sender = userCacheService.getUser(payload.getSenderId());
             if (sender != null) {
                 payload.setSenderName(sender.getUsername());
                 payload.setSenderAvatar(sender.getAvatarUrl());

@@ -5,6 +5,7 @@ import com.quantumlink.im.chat.config.AuthContext;
 import com.quantumlink.im.chat.entity.User;
 import com.quantumlink.im.chat.mapper.UserMapper;
 import com.quantumlink.im.chat.service.AvatarStorageService;
+import com.quantumlink.im.chat.service.UserCacheService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +24,7 @@ public class UserController {
 
     private final UserMapper userMapper;
     private final AvatarStorageService avatarStorageService;
+    private final UserCacheService userCacheService;
 
     /**
      * 按用户名解析用户。
@@ -70,12 +72,13 @@ public class UserController {
                 return resp;
             }
             String avatarUrl = avatarStorageService.uploadAvatar(userId, file.getBytes(), file.getContentType());
-            // 更新用户表
+            // 更新用户表 + 删用户资料缓存(头像变了,缓存要失效)
             User user = userMapper.selectOne(
                     new LambdaQueryWrapper<User>().eq(User::getUserId, userId));
             if (user != null) {
                 user.setAvatarUrl(avatarUrl);
                 userMapper.updateById(user);
+                userCacheService.invalidate(userId);
             }
             resp.put("success", true);
             resp.put("avatarUrl", avatarUrl);

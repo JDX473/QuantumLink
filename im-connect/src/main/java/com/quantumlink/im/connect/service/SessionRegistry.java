@@ -28,6 +28,7 @@ public class SessionRegistry {
     private static final Logger log = LoggerFactory.getLogger(SessionRegistry.class);
 
     private static final String SESSION_PREFIX = "im:session:";
+    private static final String DEVICES_PREFIX = "im:devices:";
     private static final long TTL_SECONDS = 30;
 
     private final RedisClient redisClient;
@@ -50,9 +51,15 @@ public class SessionRegistry {
         return SESSION_PREFIX + userId + ":" + deviceId;
     }
 
-    /** 注册会话(握手通过后调用),带 TTL */
+    /** 设备列表 key:im:devices:{userId} → Set<deviceId>(查在线用,O(1),替代 keys 扫描) */
+    private String devicesKey(String userId) {
+        return DEVICES_PREFIX + userId;
+    }
+
+    /** 注册会话(握手通过后调用):写会话 key + 加入设备 Set */
     public void register(String userId, String deviceId, String nodeId) {
         commands.setex(key(userId, deviceId), TTL_SECONDS, nodeId);
+        commands.sadd(devicesKey(userId), deviceId);
         log.info("session registered: user={} device={} node={}", userId, deviceId, nodeId);
     }
 
@@ -61,14 +68,28 @@ public class SessionRegistry {
         commands.expire(key(userId, deviceId), TTL_SECONDS);
     }
 
-    /** 清理会话(断连时调用) */
+    /** 清理会话(断连时调用):删会话 key + 移出设备 Set */
     public void remove(String userId, String deviceId) {
         commands.del(key(userId, deviceId));
+        commands.srem(devicesKey(userId), deviceId);
     }
 
     /** 查询用户某设备的节点 */
     public String getNode(String userId, String deviceId) {
         return commands.get(key(userId, deviceId));
+    }
+
+    /** 查询用户所有在线设备的 nodeId(替代 keys 扫描:SMEMBERS O(1) + 逐个 GET) */
+    public java.util.List<String> getOnlineNodes(String userId) {
+        java.util.List<String> result = new java.util.ArrayList<>();
+        java.util.Set<String> devices = commands.smembers(devicesKey(userId));
+        for (String deviceId : devices) {
+            String nodeId = commands.get(key(userId, deviceId));
+            if (nodeId != null) {
+                result.add(nodeId);
+            }
+        }
+        return result;
     }
 
     /** 握手鉴权:校验 token 是否有效,返回 userId(null=无效) */
