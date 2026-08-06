@@ -19,7 +19,9 @@ public enum FrameType {
     /** 错误 */
     ERROR((byte) 7),
     /** 已送达回执(接收方收到消息后回执给服务端) */
-    DELIVER_ACK((byte) 8);
+    DELIVER_ACK((byte) 8),
+    /** 已读上报(客户端打开会话/看到新消息后上报已读水位) */
+    READ_ACK((byte) 9);
 
     private final byte code;
 

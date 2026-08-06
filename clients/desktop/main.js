@@ -159,6 +159,7 @@ ipcMain.handle('connect:start', async (_e, { token, deviceId }) => {
       onMessage: (msg) => sendToRenderer('msg:received', msg),
       onAck: (ack) => sendToRenderer('msg:ack', ack),
       onDelivered: (ack) => sendToRenderer('msg:delivered', ack),
+      onRead: (read) => sendToRenderer('msg:read', read),
       onClosed: () => sendToRenderer('conn:status', { status: 'closed' }),
       onSendFailed: (msg) => sendToRenderer('msg:failed', msg),
     },
@@ -177,6 +178,12 @@ ipcMain.handle('chat:send', async (_e, { receiverId, conversationId, content, ms
     content,
     clientTime: Date.now(),
   });
+});
+
+/** 上报已读:渲染进程打开会话/看到新消息时,上报"已读到 seq X" */
+ipcMain.handle('chat:reportRead', async (_e, { conversationId, untilSeq }) => {
+  if (!client) return false;
+  return client.reportRead(conversationId, untilSeq);
 });
 
 /** 创建群(ownerId 服务端从鉴权上下文取,不信任客户端) */

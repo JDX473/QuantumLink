@@ -47,4 +47,6 @@ public class DownstreamEnvelope {
     /** 内容类型常量 */
     public static final String TYPE_ACK = "ACK";
     public static final String TYPE_MSG = "MSG";
+    /** 已读事件(对端读了本会话的消息,水位推进后推给发送方) */
+    public static final String TYPE_READ = "READ";
 }

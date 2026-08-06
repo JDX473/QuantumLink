@@ -174,6 +174,12 @@ class ImClient {
       this.handlers.onDelivered(ack);
       return;
     }
+    // READ(对方已读水位推进):不是本客户端发的消息的回执,是对端读了我的消息的事件。
+    // 特征:没有 ackType,而是 {conversationId, readerId, untilSeq}(ReadReportPayload)
+    if (ack && ack.readerId != null && ack.untilSeq != null && this.handlers.onRead) {
+      this.handlers.onRead(ack);
+      return;
+    }
     if (this.handlers.onAck) this.handlers.onAck(ack);
   }
 
@@ -201,6 +207,17 @@ class ImClient {
 
     this._sendWithRetry(item);
     return clientMsgId;
+  }
+
+  /**
+   * 上报已读:本端在会话里看到的最大的 seq。
+   * 打开会话/会话中收到新消息渲染后调用。服务端推进本端水位并推 READ 事件给对端。
+   * @param {string} conversationId 会话 ID
+   * @param {number} untilSeq 已读到的最大 seq(≤ 该值全部视为已读)
+   */
+  reportRead(conversationId, untilSeq) {
+    if (!this.connected || !conversationId || !untilSeq) return false;
+    return this.sendFrame(FrameType.READ_ACK, { conversationId, untilSeq });
   }
 
   /** 发送一条 pending 消息(首次 or 重传),并安排下一次重传 */

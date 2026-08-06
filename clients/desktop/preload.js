@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('quantumlink', {
 
   // 消息
   send: (msg) => ipcRenderer.invoke('chat:send', msg),
+  // 已读上报
+  reportRead: (info) => ipcRenderer.invoke('chat:reportRead', info),
   // 群聊
   createGroup: (info) => ipcRenderer.invoke('groups:create', info),
   face2face: (info) => ipcRenderer.invoke('groups:face2face', info),
@@ -39,5 +41,6 @@ contextBridge.exposeInMainWorld('quantumlink', {
   onMessage: (cb) => ipcRenderer.on('msg:received', (_e, data) => cb(data)),
   onAck: (cb) => ipcRenderer.on('msg:ack', (_e, data) => cb(data)),
   onDelivered: (cb) => ipcRenderer.on('msg:delivered', (_e, data) => cb(data)),
+  onRead: (cb) => ipcRenderer.on('msg:read', (_e, data) => cb(data)),
   onSendFailed: (cb) => ipcRenderer.on('msg:failed', (_e, data) => cb(data)),
 });
