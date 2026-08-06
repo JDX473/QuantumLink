@@ -17,6 +17,7 @@ let currentAvatar = null;      // 当前登录的头像 URL
 let currentConv = null;        // 当前会话 conversationId
 let currentConvIsGroup = false; // 当前会话是否为群
 let convMessages = new Map();  // conversationId → { messages: [] }
+let peerReadSeqByConv = new Map(); // conversationId → 对端已读水位(对方读到哪条 seq)
 
 // ---- 视图切换 ----
 const loginView = $('#login-view');
@@ -222,12 +223,33 @@ async function openConversation(conversationId, peerUserId, peerUsername, isGrou
   const data = isGroup
     ? await api.pullGroupMessages({ groupId: conversationId, afterSeq: 0 })
     : await api.pullMessages({ conversationId, afterSeq: 0 });
+
+  // 对端已读水位:自己的消息 seq ≤ 该水位 → "对方已读"
+  // (实时 READ 事件管当下,这里管历史——对端离线期间读的靠下拉补回来)
+  const peerRead = isGroup ? 0 : (data.peerReadSeq || 0);
+  peerReadSeqByConv.set(conversationId, peerRead);
+
+  let maxDisplayedSeq = 0;
   for (const m of (data.messages || [])) {
-    // 根据消息实际状态渲染:SENT=已存储 / DELIVERED=对方已送达
+    // 自己的消息按实际状态渲染:SENT=已存储 / DELIVERED=对方已送达 / 对端水位已过=对方已读
     // (不能固定 delivered,否则给离线用户发的消息也会显示"已送达")
-    renderMessage(m, m.status === 'DELIVERED' ? 'delivered' : 'stored');
+    const isMine = m.senderId === currentUser;
+    const status = isMine
+      ? (m.seq <= peerRead ? 'read' : (m.status === 'DELIVERED' ? 'delivered' : 'stored'))
+      : (m.status === 'DELIVERED' ? 'delivered' : 'stored');
+    renderMessage(m, status);
+    if (m.seq > maxDisplayedSeq) maxDisplayedSeq = m.seq;
   }
   convMessages.set(conversationId, data.messages || []);
+
+  // 打开会话 = 看到了这些消息 → 上报已读(对端秒级感知;群聊已读后续单独做)
+  if (!isGroup && maxDisplayedSeq > 0) reportRead(conversationId, maxDisplayedSeq);
+}
+
+/** 上报已读:本端看到的最大 seq(打开会话 / 会话中收到新消息渲染后调用) */
+function reportRead(conversationId, untilSeq) {
+  if (!conversationId || !untilSeq) return;
+  api.reportRead({ conversationId, untilSeq }).catch(() => {});
 }
 
 // ---- 消息渲染 ----
@@ -243,6 +265,7 @@ function renderMessage(msg, status) {
   el.className = 'message-row ' + (isMine ? 'mine' : 'theirs');
   el.dataset.msgId = msg.serverMsgId || '';
   el.dataset.clientMsgId = msg.clientMsgId || '';
+  el.dataset.seq = msg.seq || ''; // 已读判定用:对端水位 ≥ seq → 已读
 
   // 头像(气泡外侧):自己右侧,对方左侧
   const displayName = isMine ? '我' : (msg.senderName || msg.senderId || '?');
@@ -278,6 +301,7 @@ function statusTextFor(status) {
     case 'sending': return `<span class="sending"><span class="status-dot"></span>发送中</span>`;
     case 'stored': return `<span class="stored"><span class="status-dot"></span>已存储</span>`;
     case 'delivered': return `<span class="delivered"><span class="status-dot"></span>对方已送达</span>`;
+    case 'read': return `<span class="read"><span class="status-dot"></span>对方已读</span>`;
     case 'failed': return `<span class="failed"><span class="status-dot"></span>发送失败</span>`;
     default: return '';
   }
@@ -318,6 +342,10 @@ api.onMessage((msg) => {
   // 是当前会话 → 直接渲染
   if (currentConv === msg.conversationId) {
     renderMessage(msg, 'delivered');
+    // 会话打开中收到对端消息 → 渲染了就算已读,上报(对端秒级感知;群聊已读后续单独做)
+    if (!currentConvIsGroup && msg.senderId !== currentUser && msg.seq) {
+      reportRead(currentConv, msg.seq);
+    }
   }
   // 更新会话列表预览
   loadConversations();
@@ -327,13 +355,37 @@ api.onMessage((msg) => {
 api.onAck((ack) => {
   if (ack.ackType === 'STORE') {
     const el = findMessageByClientId(ack.clientMsgId);
-    if (el) { updateMessageStatus(el, 'stored'); el.dataset.msgId = ack.serverMsgId; }
+    if (el) {
+      updateMessageStatus(el, 'stored');
+      el.dataset.msgId = ack.serverMsgId;
+      if (ack.seq) el.dataset.seq = ack.seq; // 补服务端 seq:onRead 按它判定已读(发送时 seq 未知)
+    }
   }
 });
 
 api.onDelivered((ack) => {
   const el = findMessageByMsgId(ack.serverMsgId) || findMessageByClientId(ack.clientMsgId);
   if (el) updateMessageStatus(el, 'delivered');
+});
+
+// ---- READ 事件:对端读了本会话的消息,水位推进 → 重渲染自己的消息 ----
+api.onRead((read) => {
+  if (!read || !read.conversationId || read.untilSeq == null) return;
+  const conv = read.conversationId;
+  // 只进不退(多端/乱序防护)
+  const prev = peerReadSeqByConv.get(conv) || 0;
+  if (read.untilSeq <= prev) return;
+  peerReadSeqByConv.set(conv, read.untilSeq);
+
+  // 当前会话:自己 ≤ 对端水位的消息标记为"对方已读"
+  if (currentConv === conv && !currentConvIsGroup) {
+    document.querySelectorAll('.message-row.mine').forEach((el) => {
+      const seq = Number(el.dataset.seq);
+      if (!isNaN(seq) && seq > 0 && seq <= read.untilSeq) {
+        updateMessageStatus(el, 'read');
+      }
+    });
+  }
 });
 
 api.onSendFailed((msg) => {

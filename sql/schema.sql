@@ -105,6 +105,18 @@ CREATE TABLE IF NOT EXISTS `im_group_message` (
     KEY `idx_group_seq` (`group_id`, `seq`)
 ) ENGINE = InnoDB COMMENT = '群消息';
 
+-- 单聊已读位点:每个用户每会话一行(读的人 → 该会话 → 已读水位)
+-- 已读 = 派生状态,由发送方客户端用"对端水位"推导(seq ≤ 对端水位 = 已读),不写共享消息行
+CREATE TABLE IF NOT EXISTS `im_read_pos` (
+    `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `user_id`         VARCHAR(64)  NOT NULL COMMENT '谁读了(读者)',
+    `conversation_id` VARCHAR(128) NOT NULL COMMENT 'A#B(规范化)',
+    `read_seq`        BIGINT       NOT NULL DEFAULT 0 COMMENT '已读水位:读到 seq X = ≤X 全已读',
+    `updated_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_conv` (`user_id`, `conversation_id`)
+) ENGINE = InnoDB COMMENT = '会话已读位点';
+
 -- 默认测试用户(便于本地验证;生产应走注册接口)
 INSERT IGNORE INTO `im_user` (`user_id`, `username`, `password_hash`)
 VALUES ('user_001', 'alice', 'dev-only'),

@@ -73,6 +73,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 | 先落库后缓存 | 可靠锚点在 MySQL,Redis 可丢弃,客户端 seq 补拉自愈 |
 | EventLoop 只收发 | 阻塞调用丢 per-conversation executor,保序且不阻塞 EventLoop |
 | 服务端最少连接调度 | 三层职责分离:Nacos 管实例存在性、会话表管消息路由、连接数心跳管负载指标;调度接口返回"该连谁",客户端无感知节点列表 |
+| 已读 = 对端水位推导的派生状态 | im_message 是 A#B 共享行,逐条标已读分不清方向;seq 会话内单调使"读到 seq X" O(1) 表达——发送方用对端水位判定自己消息已读;水位存独立 im_read_pos(每读者一行),Redis 实时 + MySQL 持久化,拉历史接口带 peerReadSeq 兜底离线 |
 
 ## 项目进展
 
@@ -110,6 +111,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - **2026-08-05(chat 多实例 + 雪花主键 + JS 精度修复)**:① **chat 多实例验证通过**:RocketMQ 同 group 自动分摊(8081+8082 双实例都消费);Redis INCR 发号 + 队列 hash 路由保证**实例稳定后同会话 seq 严格有序**;幂等双保险扛并发。**已知边界**:实例增减瞬间(rebalance)可能瞬时乱序(队列消费权切换),生产可接受(客户端按 seq 排序 + 增量拉取自愈)。② **雪花主键**:im_message/im_group_message 主键从 DB 自增改 **MyBatis-Plus ASSIGN_ID(雪花)**,多 chat 实例全局唯一(之前 DB 自增会撞);schema/表去掉 AUTO_INCREMENT。③ **JS 精度修复**:19 位雪花 id 超过 JS Number 安全范围(2^53)导致客户端丢精度 → **serverMsgId 下发改为 String**(字段类型 Long→String,`String.valueOf(id)`),客户端统一字符串处理。**验证**:双实例下跨节点互聊通过、雪花 id DB 无重复、seq 稳定后严格有序。
 - **2026-08-05(面对面建群)**:微信式"输 4 位数字快速建群"。**核心机制**:Redis `im:f2f:{code}` 映射 code → 群,**5 分钟 TTL 时间窗口**(到期自动释放数字,无需定时任务);**Lua 原子"查/建"**(Redis 单线程,并发输入同数字只建一个群——先到者 CREATE,后到者 EXIST 复用);群名自动"面对面建群 {code}",200 人上限,加人幂等。**踩坑**:Spring `DefaultRedisScript` 返回类型必须 `List.class`——`Object.class` 会把 Lua multi-bulk 误解析成单值导致 action 判断失效。**验证**:A 建群 → B/C 并发加入同群 → 跨节点实时收群消息 → 重复输入幂等。
 - **2026-08-05(单元测试 + 快速启动脚本)**:① **单测 116 个全过**(im-common 28 / im-connect 15 / im-chat 73),JaCoCo 绑定三个模块;业务逻辑类**指令覆盖率 83%**(核心服务 AuthService 97%、MessageQueryService 93%、MessageService 84%、UserCacheService 90%、GroupController 79%);纯 DTO/基础设施类(Netty 服务器/RocketMQ 生产消费者/MinIO)不做单测(测了是测框架 mock,无价值)。② **快速启动脚本**:`scripts/start-all.cmd`(服务端一键启动:检测端口缺什么起什么)+ `scripts/start-client.cmd`(客户端一键启动:检测服务端→装依赖→起 Electron)。**踩坑**:cmd 脚本必须 GBK/纯 ASCII 编码(UTF-8 被 cmd 按 GBK 误读成乱码命令)、Electron 启动必须带 app 路径 `.`(否则显示 "To run a local app" 提示)、`findstr` 正则简化、`start` 标题必须带引号。
+- **2026-08-06(单聊已读:可靠投递第三态)**:新增已读回执——B 打开会话/看到新消息时上报"我已读到 seq X",服务端单调推进水位(Redis Lua 原子 + MySQL `im_read_pos` 持久化)并推 READ 事件给 A,A 渲染"对方已读"。**核心设计**:① 已读是**派生状态**——发送方用"对端水位"推导(自己消息.seq ≤ 对端水位 = 已读),**不写共享的 im_message 行**(A#B 共享,逐条标已读分不清方向);② 读水位 O(1) 表达(seq 会话内单调,"读到 seq X" = "≤X 全已读");③ **离线不丢**——拉历史接口带 `peerReadSeq`,实时事件管当下、拉取接口管历史;④ 协议加 `READ_ACK` 帧(9)+ `DownstreamEnvelope.TYPE_READ`,上行走 `read_report` topic,复用 DELIVER_ACK 通道。**验证**:A 发 → B 收 → B 上报 → A 秒收 READ 事件(reader=B untilSeq=1),Redis 水位=1、MySQL read_seq=1、拉历史 peerReadSeq=1 全对(`scripts/verify-read.js`)。
 
 ## 分支
 

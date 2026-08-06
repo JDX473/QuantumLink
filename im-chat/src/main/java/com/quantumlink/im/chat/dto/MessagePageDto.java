@@ -23,6 +23,13 @@ public class MessagePageDto {
     /** 本会话当前最大 seq(已落库水位线) */
     private Long serverMaxSeq;
 
+    /**
+     * 对端已读水位(对方读到哪条 seq)。
+     * 客户端据此渲染自己消息的已读:我的消息.seq ≤ peerReadSeq → "对方已读"。
+     * 实时 READ 事件管当下,本字段管历史——对端离线期间读的,靠下拉补回来。
+     */
+    private Long peerReadSeq;
+
     /** 消息项:下发给客户端的最小字段集 */
     @Getter
     @Setter

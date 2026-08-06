@@ -3,6 +3,7 @@ package com.quantumlink.im.connect.handler;
 import com.quantumlink.im.common.protocol.AckPayload;
 import com.quantumlink.im.common.protocol.ImFrame;
 import com.quantumlink.im.common.protocol.MessagePayload;
+import com.quantumlink.im.common.protocol.ReadReportPayload;
 import com.quantumlink.im.common.util.ConversationIdUtil;
 import com.quantumlink.im.common.util.JsonUtil;
 import com.quantumlink.im.common.util.ProtocolUtil;
@@ -148,6 +149,28 @@ public class MessageDispatcher {
         boolean ok = upstreamProducer.sendToTopic("deliver_ack", json, conversationId == null ? "" : conversationId);
         if (!ok) {
             log.error("deliver_ack send failed: user={} serverMsgId={}", userId, ack.getServerMsgId());
+        }
+    }
+
+    /**
+     * 已读上报(READ_ACK):接收方 B 打开会话/看到新消息后上报水位。
+     * 解析 ReadReportPayload,补 readerId(从连接上下文,不信任客户端),发到 {@code read_report} topic。
+     * chat 消费后推进水位并推 READ 事件给对端 A。
+     */
+    public void dispatchReadAck(String userId, String deviceId, ImFrame frame) {
+        ReadReportPayload report = ProtocolUtil.parseBody(frame, ReadReportPayload.class);
+        if (report == null || report.getConversationId() == null || report.getUntilSeq() == null
+                || report.getUntilSeq() <= 0) {
+            log.warn("bad read report, skip: user={}", userId);
+            return;
+        }
+        report.setReaderId(userId); // 是谁上报的(接收方/读者)
+
+        String conversationId = report.getConversationId();
+        String json = JsonUtil.toJson(report);
+        boolean ok = upstreamProducer.sendToTopic("read_report", json, conversationId == null ? "" : conversationId);
+        if (!ok) {
+            log.error("read_report send failed: user={} conv={}", userId, conversationId);
         }
     }
 }

@@ -102,6 +102,7 @@ public class DownstreamConsumer {
         FrameType frameType = switch (envelope.getType()) {
             case DownstreamEnvelope.TYPE_ACK -> FrameType.MSG_ACK;
             case DownstreamEnvelope.TYPE_MSG -> FrameType.MSG;
+            case DownstreamEnvelope.TYPE_READ -> FrameType.MSG_ACK; // 已读事件:作为服务端回执推给发送方
             default -> {
                 log.warn("unknown type: {}", envelope.getType());
                 yield null;

@@ -4,6 +4,7 @@ import com.quantumlink.im.chat.config.AuthContext;
 import com.quantumlink.im.chat.dto.ConversationListDto;
 import com.quantumlink.im.chat.dto.MessagePageDto;
 import com.quantumlink.im.chat.service.MessageQueryService;
+import com.quantumlink.im.chat.service.ReadService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +24,7 @@ import java.util.Map;
 public class MessageController {
 
     private final MessageQueryService messageQueryService;
+    private final ReadService readService;
 
     /**
      * 增量拉取某会话 afterSeq 之后的消息,按 seq 升序。
@@ -41,7 +43,10 @@ public class MessageController {
             resp.put("message", "forbidden: not a conversation participant");
             return resp;
         }
-        return messageQueryService.pullMessages(conversationId, afterSeq, limit);
+        MessagePageDto dto = messageQueryService.pullMessages(conversationId, afterSeq, limit);
+        // 带上对端已读水位:客户端据此渲染自己消息的"已读/未读"(离线期间对端读的也在这补回)
+        dto.setPeerReadSeq(readService.peerReadSeq(conversationId, userId));
+        return dto;
     }
 
     /**
