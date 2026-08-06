@@ -13,11 +13,12 @@
  *          └→(≥6次)→ FAILED(回调 onSendFailed)
  *
  * 关键点:
- * - 重传带**同一个 clientMsgId** → 服务端幂等去重,不重复落库
+ * - 重传带**同一个 clientMsgId**(UUID,全局唯一)→ 服务端幂等去重,不重复落库
  * - 断线时 pending 保留,重连成功后先 flush pending,再发新消息
  * - 收到 ACK-STORE 用 clientMsgId 精确匹配(服务端已在 ACK 里回带)
  */
 const net = require('net');
+const { randomUUID } = require('crypto');
 const { FrameType, encode, FrameDecoder } = require('./protocol');
 
 const HEARTBEAT_INTERVAL_MS = 10000; // 心跳 10s(与服务端一致)
@@ -54,9 +55,6 @@ class ImClient {
 
     // 发送确认:clientMsgId → pending 消息
     this.pending = new Map();
-    this.clientSeq = 0; // 本地自增
-    // 会话随机前缀:防止客户端重启后 clientSeq 归零,生成的 clientMsgId 撞到 TTL 内的旧 key
-    this.sessionNonce = Math.floor(Math.random() * 0xFFFFFF).toString(16);
 
     // 增量拉取:conversationId → 已同步的最大 seq(位点)
     this.conversationLastSeq = new Map();
@@ -191,9 +189,10 @@ class ImClient {
    * @returns {string} clientMsgId
    */
   sendMessage(msg) {
-    // 生成幂等键:deviceId + 会话随机前缀 + 本地自增。
-    // 同一条逻辑消息重传不换号;重启后 clientSeq 归零也不会撞 TTL 内的旧 key
-    const clientMsgId = `${this.deviceId}-${this.sessionNonce}-${++this.clientSeq}`;
+    // 生成幂等键:UUID 全局唯一(碰撞概率 10^-19 量级,工程上可忽略)。
+    // 同一条逻辑消息重传不换号(存 pending 后取同一个 UUID);重启/多设备/多会话都不撞,
+    // 无需维护 deviceId + sessionNonce + clientSeq 拼接状态(那是"无状态随机"的绕路)。
+    const clientMsgId = randomUUID();
     const full = { ...msg, clientMsgId };
 
     // 登记 pending
