@@ -67,7 +67,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 | 决策 | 理由 |
 |------|------|
 | 自定义 TCP 协议 | 粘包拆包/握手/心跳全是可深挖的真实考点;比 WebSocket 硬核 |
-| client_msg_id 客户端生成 | 幂等键必须客户端生成,重发才能带同一个;消息身份 server_msg_id 由服务端生成 |
+| client_msg_id 客户端生成(UUID) | 幂等键必须客户端生成,重发才能带同一个;UUID 全局唯一免维护;消息身份 server_msg_id 由服务端生成 |
 | seq 用 Redis INCR 业务层取号 | 会话级集中发号,唯一且递增;配合 per-conversation 保序链路,顺序 = 发送顺序 |
 | 双 ACK(STORE/DELIVER) | 区分"已存储"与"对方已送达",覆盖不同故障边界 |
 | 先落库后缓存 | 可靠锚点在 MySQL,Redis 可丢弃,客户端 seq 补拉自愈 |
@@ -113,6 +113,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - **2026-08-05(单元测试 + 快速启动脚本)**:① **单测 116 个全过**(im-common 28 / im-connect 15 / im-chat 73),JaCoCo 绑定三个模块;业务逻辑类**指令覆盖率 83%**(核心服务 AuthService 97%、MessageQueryService 93%、MessageService 84%、UserCacheService 90%、GroupController 79%);纯 DTO/基础设施类(Netty 服务器/RocketMQ 生产消费者/MinIO)不做单测(测了是测框架 mock,无价值)。② **快速启动脚本**:`scripts/start-all.cmd`(服务端一键启动:检测端口缺什么起什么)+ `scripts/start-client.cmd`(客户端一键启动:检测服务端→装依赖→起 Electron)。**踩坑**:cmd 脚本必须 GBK/纯 ASCII 编码(UTF-8 被 cmd 按 GBK 误读成乱码命令)、Electron 启动必须带 app 路径 `.`(否则显示 "To run a local app" 提示)、`findstr` 正则简化、`start` 标题必须带引号。
 - **2026-08-06(单聊已读:可靠投递第三态)**:新增已读回执——B 打开会话/看到新消息时上报"我已读到 seq X",服务端单调推进水位(Redis Lua 原子 + MySQL `im_read_pos` 持久化)并推 READ 事件给 A,A 渲染"对方已读"。**核心设计**:① 已读是**派生状态**——发送方用"对端水位"推导(自己消息.seq ≤ 对端水位 = 已读),**不写共享的 im_message 行**(A#B 共享,逐条标已读分不清方向);② 读水位 O(1) 表达(seq 会话内单调,"读到 seq X" = "≤X 全已读");③ **离线不丢**——拉历史接口带 `peerReadSeq`,实时事件管当下、拉取接口管历史;④ 协议加 `READ_ACK` 帧(9)+ `DownstreamEnvelope.TYPE_READ`,上行走 `read_report` topic,复用 DELIVER_ACK 通道。**验证**:A 发 → B 收 → B 上报 → A 秒收 READ 事件(reader=B untilSeq=1),Redis 水位=1、MySQL read_seq=1、拉历史 peerReadSeq=1 全对(`scripts/verify-read.js`)。
 - **2026-08-06(已读修复:状态竞态 + 增量打开 + 状态显示)**:实测发现并修复三个问题。① **DELIVER 晚于 READ 把已读降级**:DELIVER(对方已送达)与 READ(对方已读)走两个 topic/两个消费者,到达顺序不保证——连发消息时 DELIVER 偶发晚于 READ,旧代码无条件置"已送达"把"已读"打回(症状:最后一条变已送达)。修复为客户端消息状态**只进不退**(sending<stored<delivered<read,`updateMessageStatus` 按 rank 判定)+ `onAck` 用对端水位补判;确认 **ACK 恒先于 READ**(消息先存储才能被读,"READ 先于 ACK"仅兜底保险)。② **重进会话消息丢失**:`openConversation` 原单次 `afterSeq=0&limit=50`,会话 >50 条时最新消息被截断——改为**增量打开**:会话内缓存(实时消息按 serverMsgId 去重)+ 首次打开只拉最近 50 条(对齐微信,历史靠向上翻)+ 重开只拉游标之后增量,与 `afterSeq` 增量同步架构一致。③ **UI 只标自己消息的状态**:对方发的消息不显示状态标签(只显示时间),对齐微信/Discord。
+- **2026-08-06(clientMsgId 改 UUID)**:幂等键从 `deviceId+会话随机前缀+自增` 拼接改为 **`crypto.randomUUID()`**——全局唯一,删掉 clientSeq/sessionNonce 两套维护状态,重启/多设备/多会话天然不撞(旧拼接靠随机 nonce 防客户端重启后 clientSeq 归零撞 TTL 内去重 key)。serverMsgId(雪花)保留作为服务端正式身份(与微信双 id 同构)。**UUID 碰撞概率 10^-19 量级**(工程上可忽略,低于硬件故障);真撞时幂等去重(SETNX)会当重传处理,不产生脏数据。**验证**:UUID 生成、ACK 回带匹配、同 UUID 重传不重复落库、verify-read 端到端回归全过。
 
 ## 分支
 
@@ -125,6 +126,8 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - [docs/ordering-article.md](docs/ordering-article.md) — **IM 消息有序性:从踩坑到解决**(深度技术文章,含 5 个坑 + 保序架构 + **分布式保序** + 11 个面试问答)
 - [docs/downstream-delivery-article.md](docs/downstream-delivery-article.md) — **IM 下行投递:从"时好时坏"到"一个 group 一个节点"**(RocketMQ Topic/Group/Tag 三层机制 + consumer group 共享的坑 + 修复设计 + 11 个面试问答)
 - [docs/group-chat-design.md](docs/group-chat-design.md) — **群聊设计:读扩散 + 按节点聚合推送**(扩散模型选型 + 信封 targets 聚合 + 群消息链路 + 踩坑)
+- [docs/redis-availability-article.md](docs/redis-availability-article.md) — **Redis 挂了怎么办:依赖审计与容灾方案**(Redis 用途分层盘点 + 现状诚实评估 + 发号/路由/去重逐项解决办法 + 大厂定位 + 面试问答)
+- [docs/mq-vs-rpc-article.md](docs/mq-vs-rpc-article.md) — **为什么用 MQ 不用 RPC:上行有序 + 下行发布订阅**(两条链路逐段分析 + 与 RPC 的对比 + 三个常见回答校准 + 面试问答)
 
 ## 提交规矩
 

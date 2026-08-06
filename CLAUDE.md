@@ -49,7 +49,7 @@ QuantumLink:27 届秋招主项目,Java 后端深度 IM。从 0 写,目标是撑�
   - **UI 只标自己消息的状态**:会话里每个用户只看自己发的消息状态(发送中/已存储/对方已送达/对方已读),对方消息 `status=''` 只显示时间(对齐微信/Discord)。
 - **有序 seq**:服务端落库同一事务内 `UPDATE im_conversation SET last_seq=last_seq+1` 分配;不用 Redis INCR。
 - **可靠投递**:双 ACK——**STORE**(chat 落库,可靠锚点)+ **DELIVER**(接收方客户端回 DELIVER_ACK 帧 → connect 转发 deliver_ack topic → chat 更新状态 SENT→DELIVERED → 回 DELIVER 给发送方)。发送方超时同一 client_msg_id 重传(3s 超时、指数退避、上限 6 次)。
-- **客户端发送确认机**:pending 表 + 超时重传 + 断线感知(重连后 flush pending)。client_msg_id 必须**每次会话唯一**(deviceId + 会话随机前缀 + 自增),防客户端重启回绕撞 TTL 内旧 key。ACK 必须回带 client_msg_id,客户端才能精确匹配。
+- **客户端发送确认机**:pending 表 + 超时重传 + 断线感知(重连后 flush pending)。client_msg_id 用 **UUID**(`crypto.randomUUID()`),全局唯一,无需维护 deviceId/nonce/counter 拼接状态(旧实现 `deviceId+sessionNonce+自增` 是为防客户端重启 clientSeq 归零撞 TTL 内旧 key,UUID 一步解决;碰撞概率 10^-19 量级可忽略,真撞时幂等去重当重传处理,不产生脏数据)。重传带同一 UUID 幂等去重。ACK 必须回带 client_msg_id,客户端才能精确匹配。
 - **seq 分配(业务层取号)**:用 **Redis INCR `im:conv:seq:{conversationId}`** 集中发号(不是 DB 自增/锁)。**两段式**:保序段(Orderly 消费:去重+取seq+绑定)串行且极短,顺序在此钉死;并发段(线程池:落库+ACK+推送)全并行——顺序由 seq 承载,后续并发不破坏。保序链路:EventLoop 按到达顺序提交 → per-conversation 单线程 executor 串行 produce(同步 send)→ 按会话选同一 MQ 队列 → chat Orderly 串行取号。关键教训:并发时"抢锁顺序≠到达顺序",必须 FIFO 队列;异步 send 无法保序,必须同步。
 - **缓存**:先 MySQL 后 Redis,消息 append-only 不双删,客户端 seq 补拉自愈。
 - **离线消息 + 增量拉取**:消息一律先落库;在线推送、离线不推送,上线 `GET /api/conversations/{convId}/messages?afterSeq=` 按 seq 增量拉取(按 seq 拉而非时间,支持断点续拉/多端对齐)。客户端维护 per-conv 位点 lastSeq,重连后补拉。Spring MVC `@PathVariable`/`@RequestParam` 必须显式写参数名(编译没加 -parameters)。
