@@ -2,6 +2,7 @@ package com.quantumlink.im.chat.controller;
 
 import com.quantumlink.im.chat.config.AuthContext;
 import com.quantumlink.im.chat.config.AuthInterceptor;
+import com.quantumlink.im.chat.dto.GroupMessagePageDto;
 import com.quantumlink.im.chat.entity.Group;
 import com.quantumlink.im.chat.service.GroupService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -114,10 +115,14 @@ class GroupControllerTest {
     @Test
     void pullMessages_member_returnsMessages() {
         when(groupService.isMember("g_1", "u_me")).thenReturn(true);
-        when(groupService.pullGroupMessages("g_1", 0, 10)).thenReturn(List.of());
-        when(groupService.groupMaxSeq("g_1")).thenReturn(5L);
+        GroupMessagePageDto page = new GroupMessagePageDto();
+        page.setMessages(List.of());
+        page.setMaxSeq(5L);
+        page.setHasMore(false);
+        when(groupService.pullGroupMessages("g_1", 0, 10)).thenReturn(page);
         Map<String, Object> resp = controller.pullMessages("g_1", 0, 10, request);
         assertEquals(true, resp.get("success"));
         assertEquals(5L, resp.get("maxSeq"));
+        assertEquals(false, resp.get("hasMore"));
     }
 }

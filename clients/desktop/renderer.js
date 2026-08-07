@@ -220,23 +220,19 @@ async function openConversation(conversationId, peerUserId, peerUsername, isGrou
     el.classList.toggle('active', el.dataset.convId === conversationId));
 
   // 会话内缓存(convMessages)已按"增量"维护:实时消息进缓存,重开只拉游标之后的新消息。
-  // 首次打开(本会话内无缓存)加载最近 TAIL_LIMIT 条(对齐微信:打开看最近,历史靠向上翻)。
+  // 首次打开(本会话内无缓存)加载最近 N 条(单聊50/群聊100,对齐微信:打开看最近,更早走"查看更早的消息")。
   const peerReadRef = { value: 0 };
   let all;
 
-  if (isGroup) {
-    const page = await api.pullGroupMessages({ groupId: conversationId, afterSeq: 0 });
-    all = page.messages || [];
+  const cached = convMessages.get(conversationId) || [];
+  if (cached.length === 0) {
+    // 首次打开:只拉最近 N 条(增量思路:不全量历史)
+    all = isGroup ? await pullGroupTail(conversationId) : await pullTail(conversationId, peerReadRef);
   } else {
-    const cached = convMessages.get(conversationId) || [];
-    if (cached.length === 0) {
-      // 首次打开:只拉最近 TAIL_LIMIT 条(增量思路:不全量历史)
-      all = await pullTail(conversationId, peerReadRef);
-    } else {
-      // 再次打开:增量拉取游标(=缓存最大 seq)之后的新消息,合并缓存
-      const cursor = cached.reduce((mx, m) => Math.max(mx, m.seq || 0), 0);
-      all = cached.concat(await pullAfter(conversationId, cursor, peerReadRef));
-    }
+    // 再次打开:增量拉取游标(=缓存最大 seq)之后的新消息,合并缓存
+    const cursor = cached.reduce((mx, m) => Math.max(mx, m.seq || 0), 0);
+    const fresh = isGroup ? await pullGroupAll(conversationId, cursor) : await pullAfter(conversationId, cursor, peerReadRef);
+    all = mergeMessages(cached, fresh);
   }
 
   // 对端已读水位:自己的消息 seq ≤ 该水位 → "对方已读"
@@ -246,12 +242,8 @@ async function openConversation(conversationId, peerUserId, peerUsername, isGrou
   let maxDisplayedSeq = 0;
   for (const m of all) {
     // 自己的消息按实际状态渲染:SENT=已存储 / DELIVERED=对方已送达 / 对端水位已过=对方已读
-    // (不能固定 delivered,否则给离线用户发的消息也会显示"已送达")
     // 别人发的消息不标状态(status='')——每个用户只关心自己发的消息状态
-    const isMine = m.senderId === currentUser;
-    const status = isMine
-      ? (m.seq <= peerReadRef.value ? 'read' : (m.status === 'DELIVERED' ? 'delivered' : 'stored'))
-      : '';
+    const status = statusForMsg(m, peerReadRef.value);
     renderMessage(m, status);
     if (m.seq > maxDisplayedSeq) maxDisplayedSeq = m.seq;
   }
@@ -259,6 +251,7 @@ async function openConversation(conversationId, peerUserId, peerUsername, isGrou
 
   // 打开会话 = 看到了这些消息 → 上报已读(对端秒级感知;群聊已读后续单独做)
   if (!isGroup && maxDisplayedSeq > 0) reportRead(conversationId, maxDisplayedSeq);
+  updateLoadOlderButton();
 }
 
 /** 首次打开会话加载的最近消息条数(对齐微信:显示最近,历史靠向上翻) */
@@ -290,6 +283,37 @@ async function pullTail(conversationId, peerReadRef) {
   return pullAfter(conversationId, Math.max(0, maxSeq - TAIL_LIMIT), peerReadRef);
 }
 
+// ---- 群聊增量同步 ----
+
+/** 群聊首次打开加载的最近消息条数(小群增量同步:打开看最近 100 条,更早走"查看更早的消息") */
+const GROUP_TAIL_LIMIT = 100;
+/** 每次"查看更早的消息"加载的条数 */
+const LOAD_MORE_LIMIT = 100;
+
+/** 拉取群消息 afterSeq 之后的所有消息(分页到 hasMore=false) */
+async function pullGroupAll(groupId, afterSeq) {
+  let all = [];
+  let page;
+  do {
+    page = await api.pullGroupMessages({ groupId, afterSeq, limit: LOAD_MORE_LIMIT });
+    const msgs = page.messages || [];
+    if (msgs.length) {
+      all = all.concat(msgs);
+      afterSeq = msgs[msgs.length - 1].seq;
+    }
+    if (all.length > 2000) break; // 防御上限,防超大会话拖死 UI
+  } while (page.hasMore);
+  return all;
+}
+
+/** 首次打开群:加载最近 GROUP_TAIL_LIMIT 条。先拿 maxSeq,再从 maxSeq-N 往后拉(不全量) */
+async function pullGroupTail(groupId) {
+  const probe = await api.pullGroupMessages({ groupId, afterSeq: 0, limit: GROUP_TAIL_LIMIT });
+  const maxSeq = probe.maxSeq || 0;
+  if (maxSeq <= GROUP_TAIL_LIMIT) return probe.messages || []; // 短会话:一次全拿
+  return pullGroupAll(groupId, Math.max(0, maxSeq - GROUP_TAIL_LIMIT));
+}
+
 /** 上报已读:本端看到的最大 seq(打开会话 / 会话中收到新消息渲染后调用) */
 function reportRead(conversationId, untilSeq) {
   if (!conversationId || !untilSeq) return;
@@ -301,8 +325,8 @@ function conversationId(a, b) {
   return a < b ? a + '#' + b : b + '#' + a;
 }
 
-function renderMessage(msg, status) {
-  const stream = $('#message-stream');
+/** 构建单条消息 DOM(不 append、不滚动)——渲染 append 用,加载更早前插也用 */
+function buildMessageEl(msg, status) {
   const isMine = msg.senderId === currentUser;
 
   const el = document.createElement('div');
@@ -338,6 +362,12 @@ function renderMessage(msg, status) {
 
   el.appendChild(avatarHtml ? (() => { const a = document.createElement('span'); a.className='msg-avatar-wrap'; a.innerHTML = avatarHtml; return a; })() : document.createElement('span'));
   el.appendChild(bubble);
+  return el;
+}
+
+function renderMessage(msg, status) {
+  const stream = $('#message-stream');
+  const el = buildMessageEl(msg, status);
   stream.appendChild(el);
   stream.scrollTop = stream.scrollHeight;
   return el;
@@ -371,6 +401,68 @@ function updateMessageStatus(el, status) {
   const statusEl = el.querySelector('.msg-status');
   if (statusEl) statusEl.innerHTML = statusTextFor(status);
 }
+
+/** 消息状态:自己的消息按实际状态(SENT=已存储/DELIVERED=已送达/对端水位已过=已读);别人的不标 */
+function statusForMsg(m, peerRead) {
+  if (m.senderId !== currentUser) return '';
+  return (m.seq <= peerRead ? 'read' : (m.status === 'DELIVERED' ? 'delivered' : 'stored'));
+}
+
+/** 合并消息:按 serverMsgId 去重 + 按 seq 升序 */
+function mergeMessages(a, b) {
+  const seen = new Set(a.map(m => m.serverMsgId));
+  const out = a.slice();
+  for (const m of b) {
+    if (m && !seen.has(m.serverMsgId)) { seen.add(m.serverMsgId); out.push(m); }
+  }
+  out.sort((x, y) => (x.seq || 0) - (y.seq || 0));
+  return out;
+}
+
+// ---- 查询更早的聊天记录(向上翻,单聊/群聊通用)----
+
+/** 当前会话是否还有更早的消息(缓存最小 seq > 1) */
+function hasOlderMessages() {
+  if (!currentConv) return false;
+  const cached = convMessages.get(currentConv) || [];
+  if (!cached.length) return false;
+  const minSeq = cached.reduce((mn, m) => Math.min(mn, m.seq || Infinity), Infinity);
+  return isFinite(minSeq) && minSeq > 1;
+}
+
+/** 更新"查看更早的消息"按钮显隐 */
+function updateLoadOlderButton() {
+  const btn = $('#load-older-btn');
+  if (btn) btn.classList.toggle('hidden', !hasOlderMessages());
+}
+
+/** 加载更早的聊天记录:拉当前最小 seq 之前的 LOAD_MORE_LIMIT 条,前插到消息流 */
+async function loadOlderMessages() {
+  const convId = currentConv;
+  if (!convId) return;
+  const cached = convMessages.get(convId) || [];
+  const minSeq = cached.reduce((mn, m) => Math.min(mn, m.seq || Infinity), Infinity);
+  if (!isFinite(minSeq) || minSeq <= 1) { updateLoadOlderButton(); return; }
+
+  const afterSeq = Math.max(0, minSeq - LOAD_MORE_LIMIT);
+  const page = currentConvIsGroup
+    ? await api.pullGroupMessages({ groupId: convId, afterSeq, limit: LOAD_MORE_LIMIT })
+    : await api.pullMessages({ conversationId: convId, afterSeq, limit: LOAD_MORE_LIMIT });
+  const older = (page.messages || []).filter(m => m.seq < minSeq); // 排除已加载的边界重复
+  if (!older.length) { updateLoadOlderButton(); return; }
+
+  const merged = mergeMessages(cached, older);
+  convMessages.set(convId, merged);
+
+  // 前插:older 升序,倒序 prepend 保持整体升序(旧的在上、新的在下)
+  const stream = $('#message-stream');
+  const peerRead = peerReadSeqByConv.get(convId) || 0;
+  const nodes = older.map(m => buildMessageEl(m, statusForMsg(m, peerRead)));
+  nodes.reverse().forEach(n => stream.prepend(n));
+  updateLoadOlderButton();
+}
+
+$('#load-older-btn').addEventListener('click', () => loadOlderMessages());
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
