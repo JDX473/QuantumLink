@@ -275,6 +275,7 @@ html, body {
 .msg-status .stored { color: var(--signal); }
 .msg-status .delivered { color: var(--quantum); }
 .msg-status .failed { color: var(--alert); }
+.msg-read { color: var(--muted); font-size: 10px; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
 /* ============ 输入区 ============ */

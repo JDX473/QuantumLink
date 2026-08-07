@@ -160,6 +160,7 @@ ipcMain.handle('connect:start', async (_e, { token, deviceId }) => {
       onAck: (ack) => sendToRenderer('msg:ack', ack),
       onDelivered: (ack) => sendToRenderer('msg:delivered', ack),
       onRead: (read) => sendToRenderer('msg:read', read),
+      onGroupRead: (read) => sendToRenderer('msg:group-read', read),
       onClosed: () => sendToRenderer('conn:status', { status: 'closed' }),
       onSendFailed: (msg) => sendToRenderer('msg:failed', msg),
     },

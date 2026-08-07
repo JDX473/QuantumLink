@@ -42,5 +42,6 @@ contextBridge.exposeInMainWorld('quantumlink', {
   onAck: (cb) => ipcRenderer.on('msg:ack', (_e, data) => cb(data)),
   onDelivered: (cb) => ipcRenderer.on('msg:delivered', (_e, data) => cb(data)),
   onRead: (cb) => ipcRenderer.on('msg:read', (_e, data) => cb(data)),
+  onGroupRead: (cb) => ipcRenderer.on('msg:group-read', (_e, data) => cb(data)),
   onSendFailed: (cb) => ipcRenderer.on('msg:failed', (_e, data) => cb(data)),
 });

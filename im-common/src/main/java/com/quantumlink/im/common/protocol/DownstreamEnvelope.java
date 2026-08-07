@@ -49,4 +49,6 @@ public class DownstreamEnvelope {
     public static final String TYPE_MSG = "MSG";
     /** 已读事件(对端读了本会话的消息,水位推进后推给发送方) */
     public static final String TYPE_READ = "READ";
+    /** 群已读计数更新(成员读了群消息,计数变化后只推给受影响消息的发送者,非群广播) */
+    public static final String TYPE_GROUP_READ = "GROUP_READ";
 }
