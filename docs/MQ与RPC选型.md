@@ -78,7 +78,7 @@ chat 要推给 B → DownstreamProducer.sendEnvelope
 
 MQ 的 **Topic + Tag** 天然是发布订阅:
 - **Tag = 目标节点**:Broker 端按 tag 过滤,只有目标节点消费,其他节点零开销
-- **独立 consumer group(per-node)**:每个节点独享自己的队列,不会抢别人的消息(这是 downstream-delivery-article 里踩过的坑)
+- **独立 consumer group(per-node)**:每个节点独享自己的队列,不会抢别人的消息(这是 下行投递 里踩过的坑)
 
 RPC 做下行 = chat 自己管"所有 connect 节点的地址列表 + 逐个调用 + 处理节点挂了"。而 MQ 让 chat **不需要知道任何节点地址**,只需要按"目标节点 id"打一个 tag 扔进 broker——**路由和扇出交给 MQ**。
 
@@ -106,4 +106,4 @@ A: tag 精准投递让每个节点只收自己的消息,broker 端过滤,其他�
 
 ---
 
-*关联:有序性全链路见 `docs/ordering-article.md`;下行 consumer group 的坑见 `docs/downstream-delivery-article.md`;两层解耦架构见 README。*
+*关联:有序性全链路见 `docs/消息有序性.md`;下行 consumer group 的坑见 `docs/下行投递.md`;两层解耦架构见 README。*

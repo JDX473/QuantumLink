@@ -2,6 +2,7 @@ package com.quantumlink.im.chat.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.quantumlink.im.chat.dto.GroupMessageItemDto;
+import com.quantumlink.im.chat.dto.GroupMessagePageDto;
 import com.quantumlink.im.chat.entity.Group;
 import com.quantumlink.im.chat.entity.GroupMember;
 import com.quantumlink.im.chat.entity.GroupMessage;
@@ -269,15 +270,25 @@ public class GroupService {
         log.info("group ACK-STORE sent: sender={} seq={}", payload.getSenderId(), seq);
     }
 
-    /** 群消息增量拉取(按 seq,与单聊同构):返回 seq > afterSeq 的消息(含发送者资料) */
-    public List<GroupMessageItemDto> pullGroupMessages(String groupId, long afterSeq, Integer limit) {
+    /**
+     * 群消息增量拉取(按 seq,与单聊同构):返回 seq > afterSeq 的消息(含发送者资料)。
+     * 多取一条判断 hasMore,支持分页——打开群加载尾部、向上翻查更早历史。
+     */
+    public GroupMessagePageDto pullGroupMessages(String groupId, long afterSeq, Integer limit) {
         int pageSize = (limit == null || limit <= 0) ? DEFAULT_LIMIT : Math.min(limit, MAX_LIMIT);
+
+        // 多取一条判断 hasMore(与单聊 MessageQueryService 同构)
         List<GroupMessage> rows = messageMapper.selectList(
                 new LambdaQueryWrapper<GroupMessage>()
                         .eq(GroupMessage::getGroupId, groupId)
                         .gt(GroupMessage::getSeq, afterSeq)
                         .orderByAsc(GroupMessage::getSeq)
-                        .last("LIMIT " + pageSize));
+                        .last("LIMIT " + (pageSize + 1)));
+
+        boolean hasMore = rows.size() > pageSize;
+        if (hasMore) {
+            rows = rows.subList(0, pageSize);
+        }
 
         // 批量取发送者资料(与单聊 pullMessages 一致,一次查完)
         Set<String> senderIds = new HashSet<>();
@@ -307,7 +318,12 @@ public class GroupService {
             item.setStatus(m.getStatus());
             items.add(item);
         }
-        return items;
+
+        GroupMessagePageDto dto = new GroupMessagePageDto();
+        dto.setMessages(items);
+        dto.setHasMore(hasMore);
+        dto.setMaxSeq(groupMaxSeq(groupId));
+        return dto;
     }
 
     /** 群当前最大 seq(水位线) */

@@ -130,8 +130,8 @@ ipcMain.handle('convs:list', async (_e, { userId }) => {
 });
 
 /** 拉取某会话 afterSeq 之后的消息 */
-ipcMain.handle('convs:pull', async (_e, { conversationId, afterSeq }) => {
-  const res = await authFetch(`http://127.0.0.1:8081/api/conversations/${encodeURIComponent(conversationId)}/messages?afterSeq=${afterSeq}&limit=50`);
+ipcMain.handle('convs:pull', async (_e, { conversationId, afterSeq, limit }) => {
+  const res = await authFetch(`http://127.0.0.1:8081/api/conversations/${encodeURIComponent(conversationId)}/messages?afterSeq=${afterSeq}&limit=${limit || 50}`);
   const data = await res.json();
   return data;
 });
@@ -212,9 +212,9 @@ ipcMain.handle('groups:list', async () => {
   return res.json();
 });
 
-/** 群消息增量拉取(按 seq) */
-ipcMain.handle('groups:pull', async (_e, { groupId, afterSeq }) => {
-  const res = await authFetch(`http://127.0.0.1:8081/api/groups/${encodeURIComponent(groupId)}/messages?afterSeq=${afterSeq}`);
+/** 群消息增量拉取(按 seq;limit 控制每页,hasMore 支持翻页) */
+ipcMain.handle('groups:pull', async (_e, { groupId, afterSeq, limit }) => {
+  const res = await authFetch(`http://127.0.0.1:8081/api/groups/${encodeURIComponent(groupId)}/messages?afterSeq=${afterSeq}${limit ? '&limit=' + limit : ''}`);
   return res.json();
 });
 

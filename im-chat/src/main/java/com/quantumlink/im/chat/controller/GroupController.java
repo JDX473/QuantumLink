@@ -2,6 +2,7 @@ package com.quantumlink.im.chat.controller;
 
 import com.quantumlink.im.chat.config.AuthContext;
 import com.quantumlink.im.chat.dto.GroupMessageItemDto;
+import com.quantumlink.im.chat.dto.GroupMessagePageDto;
 import com.quantumlink.im.chat.entity.Group;
 import com.quantumlink.im.chat.service.GroupService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -114,7 +115,7 @@ public class GroupController {
         return resp;
     }
 
-    /** 群消息增量拉取(按 seq,与单聊同构;含发送者资料)。越权防护:仅群成员可拉 */
+    /** 群消息增量拉取(按 seq,与单聊同构;含发送者资料 + hasMore 分页)。越权防护:仅群成员可拉 */
     @GetMapping("/{groupId}/messages")
     public Map<String, Object> pullMessages(
             @PathVariable("groupId") String groupId,
@@ -128,10 +129,11 @@ public class GroupController {
             resp.put("message", "forbidden: not a group member");
             return resp;
         }
-        List<GroupMessageItemDto> messages = groupService.pullGroupMessages(groupId, afterSeq, limit);
+        GroupMessagePageDto page = groupService.pullGroupMessages(groupId, afterSeq, limit);
         resp.put("success", true);
-        resp.put("messages", messages);
-        resp.put("maxSeq", groupService.groupMaxSeq(groupId));
+        resp.put("messages", page.getMessages());
+        resp.put("maxSeq", page.getMaxSeq());
+        resp.put("hasMore", page.isHasMore());
         return resp;
     }
 }
