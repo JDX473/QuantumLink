@@ -117,6 +117,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - **2026-08-07(群聊已读:成员水位 + 预聚合计数)**:实现群聊已读——**协议零改动**,复用单聊 READ_ACK 帧 + read_report topic。**核心**:成员水位 `im:group_read:{gid}:{member}`(用户级,多端共享)+ 每消息预聚合计数 `im:group_msg_read:{gid}:{seq}`;上报时 **Lua 原子**"水位只进不退 + 区间 INCR"(多设备/多实例/乱序不重复计数,重复进群不重算);**不广播**(推广播=写放大),已读数**按需查**——拉取接口每条消息带 readCount。**存储**:仅 Redis + TTL(计数 7 天 / 水位 30 天),Redis 丢后成员重开群自愈。服务端 `ReadService.handleReadReport` 按 `g_` 前缀分流(群路径校验 isMember)。客户端放开群聊上报,群消息渲染"n人已读"(自己发的 count-1)。**验证**:A 进群计数=1 → B 进群=2 → A 再进群不重复(仍=2);130 单测全过。设计见 [docs/群聊已读.md](docs/群聊已读.md),验证脚本 scripts/verify-group-read.js。
 - **2026-08-07(群已读修复:发送者计数 + 实时推送 + 面对面建群 groupId)**:① **发送者总是被计入**:群成员发消息时自动推进自己的已读水位(`ReadService.advanceGroupReadOnSend`,GroupService 落库后调用)——否则刚发的消息自己没被计数,界面 count-1 会误显示 0(别人读了还显示 0)。② **实时推送只给发送者**:群已读推进时,只把 `TYPE_GROUP_READ {groupId, seq, readCount}` 推给受影响消息的**发送者**(非群广播;区间 ≤ 20 条才推,批量开群读跳过,发送者重开可见)——"都在会话内"时发送方实时看到 n人已读增长。③ **面对面建群 groupId 不一致**:`joinByCode` 的 Lua 把新群 id 写进 Redis,但 `createGroup` 内部又生成不同 id 落库 → im_group 与 im_group_member id 不一致 → 群列表查不到;修复为 `createGroup` 支持指定 id、joinByCode 用 Lua 返回的 id 落库。**验证**:面对面建群进列表 ✅、发送者实时收到 readCount=2(界面显示 1人已读)✅、132 单测全过。
 - **2026-08-07(消息有序性文档深挖补全)**:[docs/消息有序性.md](docs/消息有序性.md) 深度补全三处。**① 修正异步 send 乱序机制**(原"异步=回调线程并发就乱序"不准确):快乐路径下同线程顺序调 async 不乱序,真正乱序是**在途窗口 > 1 + 超时/失败重试从 remoting 回调/超时线程在 i+1 已入队之后插队**,附同步/异步时间线对比。**② 第七节同步为当前实现**:per-会话 `computeIfAbsent` 单线程 executor → **共享有界池(CPU×2)+ `floorMod` hash 路由**(压测 439 线程教训;池大小固定不可扩缩,取模基数变会破坏路由)。**③ 新增第十二节"消费端真相"**:`MessageListenerOrderly` 是**多线程**(默认约 20 线程)靠**队列级锁**保序(非单线程),并行度上限 = **min(队列数, 线程数)**(自动建 topic 默认 4 队列 → 保序段仅 4 路并行),不同队列不阻挡、同队列碰撞是"交错"非"乱序",失败重试 `SUSPEND_CURRENT_QUEUE_A_MOMENT` 连坐整队列,线程池槽位与 MQ 队列两个哈希是独立函数。面试问答 Q7 更新 + 新增 Q12。
+- **2026-08-07(幂等与取号原子性文档)**:新增 [docs/幂等与取号原子性.md](docs/幂等与取号原子性.md)——沉淀并发追问"幂等判断 + 分配 seq 是不是原子操作、两个相同消息并发会不会发两次"。核心结论:**幂等判断用 SETNX 一步原子**("检查+写入"同一条 Redis 命令,无 TOCTOU 窗口,两个并发 SETNX 必然只有一个成功);**SETNX→INCR 整体不是 Redis 事务,靠 Orderly 单线程串行消费保证流程原子**(同会话同队列同线程,多实例靠队列锁);**三层保险**(SETNX 原子 / Orderly 串行 / DB 唯一索引 `uk_sender_clientmsg`)。诚实边界:单聊 async 窗口(去重查原行可能 null,无害)、**insert 失败但 SETNX 已写 → 重传被挡 7 天(真实缺口,修复方向:失败回滚 dedup 键或缩短 TTL)**、群聊同步路径无 async 窗口。
 
 ## 分支
 
@@ -127,6 +128,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 
 - [docs/总体设计.md](docs/总体设计.md) — MVP 设计与实现方案(权威)
 - [docs/消息有序性.md](docs/消息有序性.md) — **IM 消息有序性:从踩坑到解决**(深度技术文章,含 5 个坑 + 保序架构 + **消费端多线程/队列锁与并行度** + **分布式保序** + 12 个面试问答)
+- [docs/幂等与取号原子性.md](docs/幂等与取号原子性.md) — **IM 幂等与取号:并发下的原子性**(TOCTOU 拆解 + SETNX 一步原子 + Orderly 串行保证流程原子 + 三层保险 + 诚实边界 + 7 个面试问答)
 - [docs/下行投递.md](docs/下行投递.md) — **IM 下行投递:从"时好时坏"到"一个 group 一个节点"**(RocketMQ Topic/Group/Tag 三层机制 + consumer group 共享的坑 + 修复设计 + 11 个面试问答)
 - [docs/群聊设计.md](docs/群聊设计.md) — **群聊设计:读扩散 + 按节点聚合推送**(扩散模型选型 + 信封 targets 聚合 + 群消息链路 + 踩坑)
 - [docs/Redis容灾.md](docs/Redis容灾.md) — **Redis 挂了怎么办:依赖审计与容灾方案**(Redis 用途分层盘点 + 现状诚实评估 + 发号/路由/去重逐项解决办法 + 大厂定位 + 面试问答)
