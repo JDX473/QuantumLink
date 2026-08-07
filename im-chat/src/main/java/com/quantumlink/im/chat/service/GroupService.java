@@ -56,9 +56,14 @@ public class GroupService {
     private final StringRedisTemplate redisTemplate;
     private final DownstreamProducer downstreamProducer;
     private final UserCacheService userCacheService;
+    /** 群已读(发送者发消息后自动推进自己的水位,保证 count-1 语义) */
+    private final ReadService readService;
 
     /** 群维度 seq 发号 key(Redis INCR,与单聊会话 seq 同构) */
     private static final String GROUP_SEQ_PREFIX = "im:group_seq:";
+
+    /** 群消息已读计数 key 前缀(与 ReadService 一致):im:group_msg_read:{gid}:{seq} → count */
+    private static final String GROUP_MSG_READ_PREFIX = "im:group_msg_read:";
 
     /** 群消息幂等去重 key */
     private static final String GROUP_DEDUP_PREFIX = "im:group_msg:dedup:";
@@ -85,10 +90,21 @@ public class GroupService {
 
     // ==================== 群管理 ====================
 
-    /** 创建群:群主 + 初始成员 */
+    /** 创建群:群主 + 初始成员(群 id 自生成) */
     public Group createGroup(String name, String ownerId, List<String> memberIds) {
+        return createGroup(null, name, ownerId, memberIds);
+    }
+
+    /**
+     * 创建群:可指定群 id。面对面建群必须用它——Lua 已把 newGroupId 写进 Redis
+     * (im:f2f:{code} → groupId),落库必须用同一个 id,否则群表 id 与成员表 id
+     * 不一致 → listGroupsByUser 查不到该群(会话不显示)。
+     */
+    public Group createGroup(String groupId, String name, String ownerId, List<String> memberIds) {
         Group group = new Group();
-        group.setGroupId("g_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16));
+        group.setGroupId(groupId != null && !groupId.isEmpty()
+                ? groupId
+                : "g_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16));
         group.setName(name);
         group.setOwnerId(ownerId);
         groupMapper.insert(group);
@@ -146,8 +162,9 @@ public class GroupService {
         boolean isNew = "CREATE".equals(action);
 
         // ③ 新建:创建群(自动命名"面对面建群 {code}"),owner = 第一个用户
+        //    用 Lua 返回的 groupId 落库(与 Redis im:f2f:{code} 一致),否则群列表查不到
         if (isNew) {
-            createGroup("面对面建群 " + code, userId, java.util.Collections.emptyList());
+            createGroup(groupId, "面对面建群 " + code, userId, java.util.Collections.emptyList());
             log.info("face2face group created: code={} groupId={} owner={}", code, groupId, userId);
         }
 
@@ -248,6 +265,10 @@ public class GroupService {
         }
         log.info("group message stored: group={} seq={} sender={}", groupId, seq, payload.getSenderId());
 
+        // 发送者已看到自己的消息 → 自动推进其已读水位(保证"n人已读"的 count-1 语义:
+        // 发送者总是被计入,count-1 = 其他已读人数,否则刚发的消息会误显示 0)
+        readService.advanceGroupReadOnSend(groupId, payload.getSenderId(), seq);
+
         // 下行扩散:发给除发送者外的所有成员(在线成员按节点聚合推送)
         List<String> memberIds = listMemberIds(groupId);
         memberIds.remove(payload.getSenderId()); // 发送者自己不回推(本地已展示)
@@ -319,6 +340,12 @@ public class GroupService {
             items.add(item);
         }
 
+        // 批量取已读数(预聚合计数,一次 MGET;0 = 还没人读)
+        Map<Long, Integer> readCounts = groupReadCounts(groupId, rows);
+        for (GroupMessageItemDto item : items) {
+            item.setReadCount(readCounts.getOrDefault(item.getSeq(), 0));
+        }
+
         GroupMessagePageDto dto = new GroupMessagePageDto();
         dto.setMessages(items);
         dto.setHasMore(hasMore);
@@ -334,6 +361,36 @@ public class GroupService {
                         .orderByDesc(GroupMessage::getSeq)
                         .last("LIMIT 1"));
         return last == null ? 0 : last.getSeq();
+    }
+
+    /**
+     * 批量取群消息已读数(预聚合计数,im:group_msg_read:{gid}:{seq} → count)。
+     * 一次 MGET 拿整页计数;缺失 key 视为 0(还没人读)。
+     */
+    private Map<Long, Integer> groupReadCounts(String groupId, List<GroupMessage> rows) {
+        Map<Long, Integer> map = new java.util.HashMap<>();
+        if (rows.isEmpty()) {
+            return map;
+        }
+        List<String> keys = new ArrayList<>(rows.size());
+        for (GroupMessage m : rows) {
+            keys.add(GROUP_MSG_READ_PREFIX + groupId + ":" + m.getSeq());
+        }
+        List<String> vals = redisTemplate.opsForValue().multiGet(keys);
+        if (vals == null) {
+            return map;
+        }
+        for (int i = 0; i < rows.size() && i < vals.size(); i++) {
+            String v = vals.get(i);
+            if (v != null) {
+                try {
+                    map.put(rows.get(i).getSeq(), Integer.parseInt(v));
+                } catch (NumberFormatException e) {
+                    map.put(rows.get(i).getSeq(), 0);
+                }
+            }
+        }
+        return map;
     }
 
     /** 填充发送者用户名 + 头像(与单聊 fillSenderProfile 一致);走用户资料缓存 */

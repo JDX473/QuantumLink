@@ -178,6 +178,12 @@ class ImClient {
       this.handlers.onRead(ack);
       return;
     }
+    // 群已读计数更新:成员读了我在群里的消息,实时更新"n人已读"(只推给发送者,非群广播)
+    // 特征:{conversationId, seq, readCount}(无 readerId/untilSeq,与单聊 READ 区分)
+    if (ack && ack.readCount != null && ack.seq != null && ack.conversationId != null && this.handlers.onGroupRead) {
+      this.handlers.onGroupRead(ack);
+      return;
+    }
     if (this.handlers.onAck) this.handlers.onAck(ack);
   }
 

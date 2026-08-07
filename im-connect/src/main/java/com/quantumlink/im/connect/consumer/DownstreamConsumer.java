@@ -103,6 +103,7 @@ public class DownstreamConsumer {
             case DownstreamEnvelope.TYPE_ACK -> FrameType.MSG_ACK;
             case DownstreamEnvelope.TYPE_MSG -> FrameType.MSG;
             case DownstreamEnvelope.TYPE_READ -> FrameType.MSG_ACK; // 已读事件:作为服务端回执推给发送方
+            case DownstreamEnvelope.TYPE_GROUP_READ -> FrameType.MSG_ACK; // 群已读计数更新:推给消息发送者
             default -> {
                 log.warn("unknown type: {}", envelope.getType());
                 yield null;

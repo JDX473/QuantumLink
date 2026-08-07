@@ -249,8 +249,8 @@ async function openConversation(conversationId, peerUserId, peerUsername, isGrou
   }
   convMessages.set(conversationId, all);
 
-  // 打开会话 = 看到了这些消息 → 上报已读(对端秒级感知;群聊已读后续单独做)
-  if (!isGroup && maxDisplayedSeq > 0) reportRead(conversationId, maxDisplayedSeq);
+  // 打开会话 = 看到了这些消息 → 上报已读(单聊推给对端;群聊推进成员水位 + 预聚合计数)
+  if (maxDisplayedSeq > 0) reportRead(conversationId, maxDisplayedSeq);
   updateLoadOlderButton();
 }
 
@@ -350,10 +350,16 @@ function buildMessageEl(msg, status) {
   const meta = document.createElement('div');
   meta.className = 'msg-meta';
   // 状态标签:只给自己的消息标(发送中/已存储/对方已送达/对方已读);别人发的消息(status='')不标
+  // 群聊消息:显示"n人已读"(自己发的排除自己;readCount 来自拉取接口预聚合,实时消息暂无)
   // 时间始终显示
   const timeText = msg.serverTime ? formatTime(msg.serverTime) : '';
   const statusHtml = status ? `<span class="msg-status">${statusTextFor(status)}</span>` : '';
-  meta.innerHTML = statusHtml + `<span class="msg-time">${escapeHtml(timeText)}</span>`;
+  let readHtml = '';
+  if (currentConvIsGroup && msg.readCount != null) {
+    const n = msg.senderId === currentUser ? (msg.readCount - 1) : msg.readCount;
+    readHtml = `<span class="msg-read">${Math.max(0, n)}人已读</span>`;
+  }
+  meta.innerHTML = statusHtml + readHtml + `<span class="msg-time">${escapeHtml(timeText)}</span>`;
 
   const bubble = document.createElement('div');
   bubble.className = 'msg-bubble';
@@ -493,8 +499,8 @@ api.onMessage((msg) => {
   // 是当前会话 → 直接渲染。对方发的消息不标状态(status='' 只显示时间)。
   if (currentConv === msg.conversationId) {
     renderMessage(msg, '');
-    // 会话打开中收到对端消息 → 渲染了就算已读,上报(对端秒级感知;群聊已读后续单独做)
-    if (!currentConvIsGroup && msg.senderId !== currentUser && msg.seq) {
+    // 会话打开中收到对端消息 → 渲染了就算已读,上报(单聊推给对端;群聊推进成员水位+计数)
+    if (msg.senderId !== currentUser && msg.seq) {
       reportRead(currentConv, msg.seq);
     }
   }
@@ -551,6 +557,28 @@ api.onRead((read) => {
   }
 });
 
+// ---- 群已读计数更新:别人读了我的群消息 → 实时更新"n人已读"(只推给发送者,非群广播) ----
+api.onGroupRead((read) => {
+  if (!read || !read.conversationId || read.seq == null || read.readCount == null) return;
+  if (currentConv !== read.conversationId || !currentConvIsGroup) return;
+  const el = document.querySelector(`.message-row[data-seq="${read.seq}"]`);
+  if (!el) return;
+  // 自己发的消息显示"其他已读人数"(count-1);别人发的显示总数
+  const senderIsMe = el.classList.contains('mine');
+  const n = senderIsMe ? (read.readCount - 1) : read.readCount;
+  const text = Math.max(0, n) + '人已读';
+  let readEl = el.querySelector('.msg-read');
+  if (readEl) {
+    readEl.textContent = text;
+  } else {
+    const meta = el.querySelector('.msg-meta');
+    readEl = document.createElement('span');
+    readEl.className = 'msg-read';
+    readEl.textContent = text;
+    meta.insertBefore(readEl, meta.firstChild);
+  }
+});
+
 api.onSendFailed((msg) => {
   const el = findMessageByClientId(msg.clientMsgId);
   if (el) updateMessageStatus(el, 'failed');
@@ -577,7 +605,7 @@ function send() {
     receiverId = a === currentUser ? b : a;
   }
 
-  const msg = { senderId: currentUser, senderAvatar: currentAvatar, receiverId, content, clientTime: Date.now() };
+  const msg = { senderId: currentUser, senderAvatar: currentAvatar, receiverId, content, clientTime: Date.now(), readCount: 0 };
   const el = renderMessage(msg, 'sending');
 
   api.send({ receiverId, conversationId: currentConv, content, msgType: 'TEXT' })

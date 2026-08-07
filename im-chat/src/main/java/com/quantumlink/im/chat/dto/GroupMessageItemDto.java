@@ -20,4 +20,6 @@ public class GroupMessageItemDto {
     private String content;
     private Long serverTime;
     private String status;
+    /** 已读数(预聚合,im:group_msg_read:{gid}:{seq} → count;0=还没人读) */
+    private Integer readCount;
 }

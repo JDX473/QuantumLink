@@ -29,6 +29,7 @@ class GroupServiceTest {
     private StringRedisTemplate redisTemplate;
     private DownstreamProducer downstreamProducer;
     private UserCacheService userCacheService;
+    private ReadService readService;
     private GroupService groupService;
 
     @BeforeEach
@@ -40,8 +41,9 @@ class GroupServiceTest {
         redisTemplate = mock(StringRedisTemplate.class);
         downstreamProducer = mock(DownstreamProducer.class);
         userCacheService = mock(UserCacheService.class);
+        readService = mock(ReadService.class);
         groupService = new GroupService(groupMapper, memberMapper, messageMapper,
-                userMapper, redisTemplate, downstreamProducer, userCacheService);
+                userMapper, redisTemplate, downstreamProducer, userCacheService, readService);
         when(redisTemplate.opsForValue()).thenReturn(mock(org.springframework.data.redis.core.ValueOperations.class));
     }
 
@@ -99,7 +101,10 @@ class GroupServiceTest {
         assertEquals("g_new1", r.get("groupId"));
         assertEquals(true, r.get("isNewGroup"));
         assertEquals("面对面建群 1234", r.get("name"));
-        verify(groupMapper).insert(any(Group.class)); // 新建了群
+        // 落库的群 id 必须 = Lua 返回的 id(否则 im_group 与 im_group_member id 不一致,群列表查不到)
+        ArgumentCaptor<Group> captor = ArgumentCaptor.forClass(Group.class);
+        verify(groupMapper).insert(captor.capture());
+        assertEquals("g_new1", captor.getValue().getGroupId());
     }
 
     @Test
