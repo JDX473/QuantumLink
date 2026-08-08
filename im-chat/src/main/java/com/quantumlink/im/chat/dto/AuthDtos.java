@@ -23,6 +23,8 @@ public class AuthDtos {
         private String username;
         private String password;
         private String deviceType; // web / desktop / mobile
+        /** 客户端生成的持久设备 id(存本地,重装/重登不变);不传则服务端分配 */
+        private String deviceId;
     }
 
     /** 登录响应:客户端握手时携带 token + deviceId */

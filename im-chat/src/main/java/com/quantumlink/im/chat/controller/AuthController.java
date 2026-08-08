@@ -1,7 +1,9 @@
 package com.quantumlink.im.chat.controller;
 
+import com.quantumlink.im.chat.config.AuthContext;
 import com.quantumlink.im.chat.dto.AuthDtos;
 import com.quantumlink.im.chat.service.AuthService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -75,7 +77,7 @@ public class AuthController {
     public Map<String, Object> login(@RequestBody AuthDtos.LoginRequest request) {
         Map<String, Object> resp = new HashMap<>();
         AuthDtos.LoginResponse result = authService.login(
-                request.getUsername(), request.getPassword(), request.getDeviceType());
+                request.getUsername(), request.getPassword(), request.getDeviceType(), request.getDeviceId());
         if (result == null) {
             resp.put("success", false);
             resp.put("message", "invalid username or password");
@@ -87,6 +89,16 @@ public class AuthController {
         resp.put("userId", result.getUserId());
         resp.put("username", result.getUsername());
         resp.put("avatarUrl", result.getAvatarUrl());
+        return resp;
+    }
+
+    /** 我的设备列表(多端):deviceId/deviceType/在线状态/最近活跃。userId 从鉴权上下文取 */
+    @GetMapping("/devices")
+    public Map<String, Object> listDevices(HttpServletRequest request) {
+        Map<String, Object> resp = new HashMap<>();
+        String userId = AuthContext.currentUserId(request);
+        resp.put("success", true);
+        resp.put("devices", authService.listDevices(userId));
         return resp;
     }
 }

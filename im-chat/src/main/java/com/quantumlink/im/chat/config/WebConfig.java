@@ -26,6 +26,10 @@ public class WebConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/auth/**");
+                // 只放行无需登录的鉴权端点(注册/登录/带头像注册);其余 /api/auth/devices 等仍需 token
+                .excludePathPatterns(
+                        "/api/auth/register",
+                        "/api/auth/register/avatar",
+                        "/api/auth/login");
     }
 }

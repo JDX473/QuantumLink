@@ -19,6 +19,27 @@ let currentConvIsGroup = false; // 当前会话是否为群
 let convMessages = new Map();  // conversationId → { messages: [] }
 let peerReadSeqByConv = new Map(); // conversationId → 对端已读水位(对方读到哪条 seq)
 
+/**
+ * 持久设备 id(多端):首启生成存 localStorage,重装/重登不变——同一个物理设备
+ * 被服务端认成同一台(设备管理/踢设备的基础)。格式 d_ + 16 hex,与服务端一致。
+ */
+function getPersistentDeviceId() {
+  let id = localStorage.getItem('ql_device_id');
+  if (!id) {
+    let hex = '';
+    if (window.crypto && window.crypto.getRandomValues) {
+      const arr = new Uint8Array(8);
+      window.crypto.getRandomValues(arr);
+      hex = Array.from(arr, b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+    } else {
+      hex = Math.random().toString(16).slice(2, 18);
+    }
+    id = 'd_' + hex;
+    localStorage.setItem('ql_device_id', id);
+  }
+  return id;
+}
+
 // ---- 视图切换 ----
 const loginView = $('#login-view');
 const mainView = $('#main-view');
@@ -71,7 +92,7 @@ $('#auth-form').addEventListener('submit', async (e) => {
       return;
     }
 
-    const login = await api.login({ username, password, deviceType: 'desktop' });
+    const login = await api.login({ username, password, deviceType: 'desktop', deviceId: getPersistentDeviceId() });
     currentUser = login.userId;
     currentUsername = login.username || username;
     currentAvatar = login.avatarUrl || null;

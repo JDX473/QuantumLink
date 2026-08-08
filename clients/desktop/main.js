@@ -54,12 +54,12 @@ function createWindow() {
 
 // ---- IPC:渲染进程 → 主进程 ----
 
-/** 登录:调业务层 HTTP 拿 token/deviceId,再建立长连接 */
-ipcMain.handle('auth:login', async (_e, { username, password, deviceType }) => {
+/** 登录:调业务层 HTTP 拿 token/deviceId,再建立长连接(deviceId 客户端持久,重装/重登不变) */
+ipcMain.handle('auth:login', async (_e, { username, password, deviceType, deviceId }) => {
   const res = await fetch('http://127.0.0.1:8081/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, deviceType: deviceType || 'desktop' }),
+    body: JSON.stringify({ username, password, deviceType: deviceType || 'desktop', deviceId }),
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.message || 'login failed');
