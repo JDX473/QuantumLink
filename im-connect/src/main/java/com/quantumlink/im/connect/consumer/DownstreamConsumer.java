@@ -119,6 +119,14 @@ public class DownstreamConsumer {
             if (!channel.isActive()) {
                 continue;
             }
+            // 背压保护:弱网连接写缓冲超过高水位(outboundBuffer 积压)→ 不可写。
+            // 跳过本次推送,不往 EventLoop 提交写任务,防止这条弱连接无限吃内存拖垮整个进程。
+            // 消息已落库(MySQL),客户端断线重连后增量拉取兜底,不丢——"推送尽力而为 + 拉取保证正确"。
+            if (!channel.isWritable()) {
+                log.warn("channel not writable, skip push (rely on incremental pull): user={} type={}",
+                        envelope.getTo(), envelope.getType());
+                continue;
+            }
             // 写 Channel 必须在 eventLoop 线程,保证线程安全
             channel.eventLoop().execute(() -> {
                 try {
