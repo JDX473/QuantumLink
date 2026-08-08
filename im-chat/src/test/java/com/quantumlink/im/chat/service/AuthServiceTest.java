@@ -75,7 +75,7 @@ class AuthServiceTest {
         user.setPasswordHash("salt123:" + realHash("salt123", "pw")); // 真实哈希:格式 salt:hash
         when(userMapper.selectOne(org.mockito.ArgumentMatchers.any(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class))).thenReturn(user);
 
-        AuthDtos.LoginResponse resp = authService.login("alice", "pw", "desktop");
+        AuthDtos.LoginResponse resp = authService.login("alice", "pw", "desktop", null);
         assertNotNull(resp);
         assertEquals("u_1", resp.getUserId());
         assertEquals("alice", resp.getUsername());
@@ -101,7 +101,7 @@ class AuthServiceTest {
     @Test
     void login_userNotFound_returnsNull() {
         when(userMapper.selectOne(org.mockito.ArgumentMatchers.any(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class))).thenReturn(null);
-        assertNull(authService.login("nobody", "pw", "desktop"));
+        assertNull(authService.login("nobody", "pw", "desktop", null));
     }
 
     @Test
@@ -109,7 +109,7 @@ class AuthServiceTest {
         User user = new User();
         user.setPasswordHash("salt123:differenthash");
         when(userMapper.selectOne(org.mockito.ArgumentMatchers.any(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class))).thenReturn(user);
-        assertNull(authService.login("alice", "wrong", "desktop"));
+        assertNull(authService.login("alice", "wrong", "desktop", null));
         verify(deviceMapper, never()).insert(any(Device.class));
     }
 
@@ -118,7 +118,7 @@ class AuthServiceTest {
         User user = new User();
         user.setPasswordHash("no-colon-here");
         when(userMapper.selectOne(org.mockito.ArgumentMatchers.any(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class))).thenReturn(user);
-        assertNull(authService.login("alice", "pw", "desktop"));
+        assertNull(authService.login("alice", "pw", "desktop", null));
     }
 
     @Test
@@ -132,7 +132,7 @@ class AuthServiceTest {
         User stored = captor.getValue();
 
         when(userMapper.selectOne(org.mockito.ArgumentMatchers.any(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class))).thenReturn(stored);
-        AuthDtos.LoginResponse resp = authService.login("alice", "pass123", null);
+        AuthDtos.LoginResponse resp = authService.login("alice", "pass123", null, null);
         assertNotNull(resp);
         assertEquals(userId, resp.getUserId());
         assertEquals("desktop", resp.getDeviceId().startsWith("d_") ? "desktop" : resp.getDeviceId());
@@ -144,10 +144,71 @@ class AuthServiceTest {
         user.setUserId("u_1");
         user.setPasswordHash("s:" + realHash("s", "pw")); // 真实哈希,密码 "pw" 能通过
         when(userMapper.selectOne(org.mockito.ArgumentMatchers.any(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class))).thenReturn(user);
-        AuthDtos.LoginResponse resp = authService.login("alice", "pw", null);
+        AuthDtos.LoginResponse resp = authService.login("alice", "pw", null, null);
         assertNotNull(resp);
         ArgumentCaptor<Device> captor = ArgumentCaptor.forClass(Device.class);
         verify(deviceMapper).insert(captor.capture());
         assertEquals("desktop", captor.getValue().getDeviceType());
+    }
+
+    // ==================== 多端:持久 deviceId + 设备列表 ====================
+
+    @Test
+    void login_withClientDeviceId_reusesSameDevice() {
+        User user = new User();
+        user.setUserId("u_1");
+        user.setPasswordHash("s:" + realHash("s", "pw"));
+        when(userMapper.selectOne(any())).thenReturn(user);
+        // 该客户端持久 deviceId 已绑定过本账号 → 复用,不新建
+        Device exist = new Device();
+        exist.setId(1L);
+        exist.setDeviceId("d_persist123");
+        exist.setUserId("u_1");
+        when(deviceMapper.selectOne(any())).thenReturn(exist);
+
+        AuthDtos.LoginResponse resp = authService.login("alice", "pw", "desktop", "d_persist123");
+
+        assertEquals("d_persist123", resp.getDeviceId());
+        verify(deviceMapper, never()).insert(any(Device.class));
+        verify(deviceMapper).updateById(any(Device.class)); // 复用:更新 token/活跃时间
+    }
+
+    @Test
+    void login_withClientDeviceId_newDevice_binds() {
+        User user = new User();
+        user.setUserId("u_1");
+        user.setPasswordHash("s:" + realHash("s", "pw"));
+        when(userMapper.selectOne(any())).thenReturn(user);
+        when(deviceMapper.selectOne(any())).thenReturn(null); // 该设备第一次登录 → 新建绑定
+
+        AuthDtos.LoginResponse resp = authService.login("alice", "pw", "desktop", "d_client123");
+
+        assertEquals("d_client123", resp.getDeviceId());
+        verify(deviceMapper).insert(any(Device.class));
+    }
+
+    @Test
+    void listDevices_withOnlineStatus() {
+        Device d1 = new Device();
+        d1.setDeviceId("d_1");
+        d1.setDeviceType("desktop");
+        Device d2 = new Device();
+        d2.setDeviceId("d_2");
+        d2.setDeviceType("mobile");
+        when(deviceMapper.selectList(any())).thenReturn(java.util.List.of(d1, d2));
+        org.springframework.data.redis.core.SetOperations<String, String> setOps = mock(org.springframework.data.redis.core.SetOperations.class);
+        when(redisTemplate.opsForSet()).thenReturn(setOps);
+        when(setOps.members("im:devices:u_1")).thenReturn(new java.util.HashSet<>(java.util.List.of("d_1")));
+        when(valueOps.get("im:session:u_1:d_1")).thenReturn("127.0.0.1:19001"); // d_1 在线
+        when(valueOps.get("im:session:u_1:d_2")).thenReturn(null); // d_2 离线
+
+        var devices = authService.listDevices("u_1");
+
+        assertEquals(2, devices.size());
+        java.util.Map<String, Object> m1 = devices.get(0);
+        java.util.Map<String, Object> m2 = devices.get(1);
+        assertEquals(true, m1.get("online"));
+        assertEquals(false, m2.get("online"));
+        assertTrue(m1.containsKey("deviceId") && m1.containsKey("deviceType") && m1.containsKey("lastActiveAt"));
     }
 }

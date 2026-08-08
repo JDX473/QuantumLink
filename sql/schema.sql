@@ -18,10 +18,12 @@ CREATE TABLE IF NOT EXISTS `im_user` (
     UNIQUE KEY `uk_username` (`username`)
 ) ENGINE = InnoDB COMMENT = '用户';
 
--- 设备表:device_id 服务端分配(区分客户端 / 多端同步基础)
+-- 设备表:device_id 客户端持久(同一物理设备重装/重登不变,多端/设备管理基础)
+-- 唯一键是 (user_id, device_id):同一台物理设备可被多个账号使用(共用电脑),
+-- 每个账号有自己的设备行;device_id 不是全局唯一(跨账号可复用同一物理设备标识)
 CREATE TABLE IF NOT EXISTS `im_device` (
     `id`             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `device_id`      VARCHAR(64)  NOT NULL COMMENT '服务端分配,设备身份',
+    `device_id`      VARCHAR(64)  NOT NULL COMMENT '客户端持久设备标识(可跨账号复用)',
     `user_id`        VARCHAR(64)  NOT NULL,
     `device_type`    VARCHAR(32)  NOT NULL COMMENT 'web / desktop / mobile',
     `token`          VARCHAR(128) NULL COMMENT '该设备登录凭证',
@@ -29,7 +31,7 @@ CREATE TABLE IF NOT EXISTS `im_device` (
     `last_active_at` DATETIME     NULL,
     `created_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_device_id` (`device_id`),
+    UNIQUE KEY `uk_user_device` (`user_id`, `device_id`),
     KEY `idx_user` (`user_id`)
 ) ENGINE = InnoDB COMMENT = '设备';
 

@@ -83,12 +83,17 @@ public class AuthService {
     }
 
     /**
-     * 登录:校验密码,签发 token + 分配 device_id。
+     * 登录:校验密码,签发 token + 绑定/分配 device_id。
+     *
+     * <p><b>持久 deviceId(多端)</b>:客户端首启生成持久设备 id 存本地,登录时带上
+     * ({@code clientDeviceId})——同一个物理设备重装/重登仍被认成同一台设备,设备管理才有意义。
+     * 服务端把 clientDeviceId 绑定到账号:该设备已存在则更新 token/活跃时间,否则新建记录。
+     * 不传则服务端分配(兼容旧客户端/脚本)。
      *
      * @return 登录成功返回 token/deviceId/userId;失败返回 null
      */
     @Transactional
-    public AuthDtos.LoginResponse login(String username, String password, String deviceType) {
+    public AuthDtos.LoginResponse login(String username, String password, String deviceType, String clientDeviceId) {
         User user = userMapper.selectOne(
                 new LambdaQueryWrapper<User>().eq(User::getUsername, username));
         if (user == null) {
@@ -107,24 +112,37 @@ public class AuthService {
             return null;
         }
 
-        // 生成 token + device_id
+        // 生成 token;deviceId 优先用客户端持久 id(绑定账号),否则服务端分配
         String token = UUID.randomUUID().toString().replace("-", "");
-        String deviceId = "d_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        String deviceId = resolveDeviceId(user.getUserId(), clientDeviceId);
         long expire = System.currentTimeMillis() + TOKEN_TTL_SECONDS * 1000;
 
         // 存 Redis:connect 握手时校验 token → userId
         redisTemplate.opsForValue().set("im:token:" + token, user.getUserId(), TOKEN_TTL_SECONDS, TimeUnit.SECONDS);
 
-        // 落 device 表
-        Device device = new Device();
-        device.setDeviceId(deviceId);
-        device.setUserId(user.getUserId());
-        device.setDeviceType(deviceType == null || deviceType.isEmpty() ? "desktop" : deviceType);
+        // 落 device 表:已存在(客户端持久 id 复用)则更新,否则新建
+        Device device = deviceMapper.selectOne(
+                new LambdaQueryWrapper<Device>()
+                        .eq(Device::getDeviceId, deviceId)
+                        .eq(Device::getUserId, user.getUserId()));
+        boolean isNew = device == null;
+        if (isNew) {
+            device = new Device();
+            device.setDeviceId(deviceId);
+            device.setUserId(user.getUserId());
+            device.setDeviceType(deviceType == null || deviceType.isEmpty() ? "desktop" : deviceType);
+            device.setCreatedAt(LocalDateTime.now());
+        } else if (deviceType != null && !deviceType.isEmpty()) {
+            device.setDeviceType(deviceType);
+        }
         device.setToken(token);
         device.setTokenExpire(expire);
         device.setLastActiveAt(LocalDateTime.now());
-        device.setCreatedAt(LocalDateTime.now());
-        deviceMapper.insert(device);
+        if (isNew) {
+            deviceMapper.insert(device);
+        } else {
+            deviceMapper.updateById(device);
+        }
 
         AuthDtos.LoginResponse resp = new AuthDtos.LoginResponse();
         resp.setToken(token);
@@ -132,8 +150,40 @@ public class AuthService {
         resp.setUserId(user.getUserId());
         resp.setUsername(user.getUsername());
         resp.setAvatarUrl(user.getAvatarUrl());
-        log.info("login ok: userId={} deviceId={}", user.getUserId(), deviceId);
+        log.info("login ok: userId={} deviceId={} {}", user.getUserId(), deviceId, isNew ? "(new device)" : "(existing device)");
         return resp;
+    }
+
+    /**
+     * 设备 id:客户端持久 id 合法则用它(绑定账号——已存在同账号设备则复用,保证
+     * 同一物理设备重装/重登被认成同一台);否则服务端分配。
+     */
+    private String resolveDeviceId(String userId, String clientDeviceId) {
+        if (clientDeviceId != null && !clientDeviceId.isEmpty()) {
+            return clientDeviceId;
+        }
+        return "d_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+    }
+
+    /** 我的设备列表:含在线状态(Redis 会话表:设备在 im:devices 且会话 key 存活 = 在线) */
+    public java.util.List<java.util.Map<String, Object>> listDevices(String userId) {
+        java.util.List<Device> devices = deviceMapper.selectList(
+                new LambdaQueryWrapper<Device>()
+                        .eq(Device::getUserId, userId)
+                        .orderByDesc(Device::getLastActiveAt));
+        java.util.Set<String> online = redisTemplate.opsForSet().members("im:devices:" + userId);
+        java.util.List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
+        for (Device d : devices) {
+            java.util.Map<String, Object> m = new java.util.HashMap<>();
+            m.put("deviceId", d.getDeviceId());
+            m.put("deviceType", d.getDeviceType());
+            m.put("lastActiveAt", d.getLastActiveAt());
+            boolean isOnline = online != null && online.contains(d.getDeviceId())
+                    && redisTemplate.opsForValue().get("im:session:" + userId + ":" + d.getDeviceId()) != null;
+            m.put("online", isOnline);
+            result.add(m);
+        }
+        return result;
     }
 
     /** SHA-256 哈希:input + salt */

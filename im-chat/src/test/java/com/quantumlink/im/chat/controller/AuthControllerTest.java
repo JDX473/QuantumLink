@@ -57,7 +57,7 @@ class AuthControllerTest {
         AuthDtos.LoginResponse r = new AuthDtos.LoginResponse();
         r.setToken("t1");
         r.setUserId("u_1");
-        when(authService.login("alice", "pw", "desktop")).thenReturn(r);
+        when(authService.login("alice", "pw", "desktop", null)).thenReturn(r);
         AuthDtos.LoginRequest req = new AuthDtos.LoginRequest();
         req.setUsername("alice");
         req.setPassword("pw");
@@ -69,7 +69,7 @@ class AuthControllerTest {
 
     @Test
     void login_wrongPassword() {
-        when(authService.login(anyString(), anyString(), anyString())).thenReturn(null);
+        when(authService.login(anyString(), anyString(), anyString(), any())).thenReturn(null);
         AuthDtos.LoginRequest req = new AuthDtos.LoginRequest();
         req.setUsername("alice");
         req.setPassword("wrong");
