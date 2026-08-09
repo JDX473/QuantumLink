@@ -6,6 +6,8 @@ import com.quantumlink.im.chat.entity.Device;
 import com.quantumlink.im.chat.entity.User;
 import com.quantumlink.im.chat.mapper.DeviceMapper;
 import com.quantumlink.im.chat.mapper.UserMapper;
+import com.quantumlink.im.common.protocol.KickPayload;
+import com.quantumlink.im.common.util.JsonUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -117,6 +119,9 @@ public class AuthService {
         String deviceId = resolveDeviceId(user.getUserId(), clientDeviceId);
         long expire = System.currentTimeMillis() + TOKEN_TTL_SECONDS * 1000;
 
+        // 同端类型单设备模式:踢掉同 deviceType 的旧设备(排除正在登录的设备)
+        kickSameTypeDevices(user.getUserId(), deviceType, clientDeviceId);
+
         // 存 Redis:connect 握手时校验 token → userId
         redisTemplate.opsForValue().set("im:token:" + token, user.getUserId(), TOKEN_TTL_SECONDS, TimeUnit.SECONDS);
 
@@ -184,6 +189,60 @@ public class AuthService {
             result.add(m);
         }
         return result;
+    }
+
+    // ==================== 多端踢人(同端类型单设备模式 / 手动踢设备) ====================
+
+    /**
+     * 发布踢人指令到 Redis Pub/Sub {@code im:kick} 频道。
+     * 所有 connect 节点订阅并收到,各节点本地判目标——只有持有该连接的节点才关。
+     * 即发即弃:踢不到也靠"删 token"兜底(重连握手被拒,最终出局)。
+     */
+    public void publishKick(String userId, String deviceId) {
+        redisTemplate.convertAndSend("im:kick", JsonUtil.toJson(new KickPayload(userId, deviceId)));
+        log.info("kick published: user={} device={}", userId, deviceId);
+    }
+
+    /**
+     * 踢同账号同 deviceType 的旧设备(单设备模式:同端类型只能一台在线)。
+     * 删旧 token(让重连被拒)+ publish KICK(断当前连接)。排除正在登录/复用的设备。
+     */
+    public void kickSameTypeDevices(String userId, String deviceType, String excludeDeviceId) {
+        if (deviceType == null || deviceType.isEmpty()) {
+            return;
+        }
+        java.util.List<Device> sameType = deviceMapper.selectList(
+                new LambdaQueryWrapper<Device>()
+                        .eq(Device::getUserId, userId)
+                        .eq(Device::getDeviceType, deviceType));
+        for (Device d : sameType) {
+            if (excludeDeviceId != null && excludeDeviceId.equals(d.getDeviceId())) {
+                continue; // 正在登录/复用的设备不踢自己
+            }
+            if (d.getToken() != null) {
+                redisTemplate.delete("im:token:" + d.getToken());
+            }
+            publishKick(userId, d.getDeviceId());
+        }
+        if (!sameType.isEmpty()) {
+            log.info("kicked same-type devices: user={} type={} count={}", userId, deviceType, sameType.size());
+        }
+    }
+
+    /** 手动踢某台设备:删其 token + publish KICK。只能踢自己的设备(调用方已校验) */
+    public boolean kickDevice(String userId, String deviceId) {
+        Device device = deviceMapper.selectOne(
+                new LambdaQueryWrapper<Device>()
+                        .eq(Device::getDeviceId, deviceId)
+                        .eq(Device::getUserId, userId));
+        if (device == null) {
+            return false;
+        }
+        if (device.getToken() != null) {
+            redisTemplate.delete("im:token:" + device.getToken());
+        }
+        publishKick(userId, deviceId);
+        return true;
     }
 
     /** SHA-256 哈希:input + salt */

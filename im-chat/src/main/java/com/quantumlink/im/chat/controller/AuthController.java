@@ -101,4 +101,17 @@ public class AuthController {
         resp.put("devices", authService.listDevices(userId));
         return resp;
     }
+
+    /** 踢掉我的某台设备(手动踢设备):删其 token + publish KICK。只能踢自己的设备 */
+    @PostMapping("/devices/{deviceId}/kick")
+    public Map<String, Object> kickDevice(@PathVariable("deviceId") String deviceId, HttpServletRequest request) {
+        Map<String, Object> resp = new HashMap<>();
+        String userId = AuthContext.currentUserId(request);
+        boolean ok = authService.kickDevice(userId, deviceId);
+        resp.put("success", ok);
+        if (!ok) {
+            resp.put("message", "device not found");
+        }
+        return resp;
+    }
 }

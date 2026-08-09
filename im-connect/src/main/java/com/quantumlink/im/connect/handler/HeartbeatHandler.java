@@ -47,6 +47,14 @@ public class HeartbeatHandler extends ChannelInboundHandlerAdapter {
             String userId = ConnectionContext.userId(ctx.channel());
             String deviceId = ConnectionContext.deviceId(ctx.channel());
             if (userId != null) {
+                // 关键:续期前查会话表是否还在——被踢(路由表已删)的连接不应续期,
+                // 否则死连接靠心跳续命、TTL 兜底失效。路由表没了 = 身份失效 → 拒绝续期 + 关连接。
+                String node = sessionRegistry.getNode(userId, deviceId);
+                if (node == null) {
+                    log.info("heartbeat from invalid/kicked session, closing: user={} device={}", userId, deviceId);
+                    ctx.close();
+                    return;
+                }
                 sessionRegistry.refresh(userId, deviceId);
             }
             ctx.channel().writeAndFlush(ProtocolUtil.buildFrame(FrameType.PONG, new byte[0]));
