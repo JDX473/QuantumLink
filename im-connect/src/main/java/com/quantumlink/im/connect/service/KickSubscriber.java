@@ -8,6 +8,7 @@ import io.lettuce.core.RedisURI;
 import io.lettuce.core.pubsub.RedisPubSubListener;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFutureListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,8 +24,14 @@ import java.time.Duration;
  * 但只有<b>持有目标连接</b>的节点才真正关(用本地 ChannelManager 判断),其余忽略。
  * 若不加判断直接关,广播会误杀所有节点的同 userId 连接。
  *
- * <p><b>EventLoop 上清理</b>:清理(remove map / clear context / close)必须在
+ * <p><b>EventLoop 上清理</b>:清理(remove map / 删路由表 / close)必须在
  * 目标连接的 EventLoop 线程上执行——与该连接的 I/O 不交错,消除竞态。
+ *
+ * <p><b>解耦:先删 Redis 路由表,再关连接</b>(2026-08-09):删路由表不依赖
+ * close 成功的 onDisconnect 副作用——若 close 失败,onDisconnect 不触发、路由表残留,
+ * 死连接靠心跳(getNode 查得到)续命,兜不住。改为踢人时<b>主动先删</b>
+ * sessionRegistry(Redis 路由表),再删本地 ChannelManager,最后 close;
+ * close 失败(isActive)重试一次,仍失败由心跳兜底(路由表已删 → getNode=null → 关连接)。
  */
 public class KickSubscriber {
     private static final Logger log = LoggerFactory.getLogger(KickSubscriber.class);
@@ -33,8 +40,10 @@ public class KickSubscriber {
 
     private final RedisClient redisClient;
     private final StatefulRedisPubSubConnection<String, String> connection;
+    private final SessionRegistry sessionRegistry;
 
-    public KickSubscriber(ConnectConfig config) {
+    public KickSubscriber(ConnectConfig config, SessionRegistry sessionRegistry) {
+        this.sessionRegistry = sessionRegistry;
         RedisURI uri = RedisURI.builder()
                 .withHost(config.redisHost)
                 .withPort(config.redisPort)
@@ -67,15 +76,40 @@ public class KickSubscriber {
             }
             // 清理必须在目标连接的 EventLoop 线程上:与该连接 I/O 不交错,消除竞态。
             // 注意:不能先 clear ConnectionContext——否则 close 触发 channelInactive → onDisconnect
-            // 时 userId 已是 null,onDisconnect 提前返回,不清 Redis 会话表(会话残留,设备列表误判在线)。
+            // 时 userId 已是 null,onDisconnect 提前返回(虽路由表已前置删,仍保语义干净)。
             ch.eventLoop().execute(() -> {
+                // 解耦:主动先删 Redis 路由表(不再依赖 close 成功触发 onDisconnect 才删)。
+                // close 失败时路由表已删 → 心跳 getNode=null → 关连接,死连接兜得住。
+                sessionRegistry.remove(kick.getUserId(), kick.getDeviceId());
                 ChannelManager.remove(kick.getUserId(), kick.getDeviceId()); // 停止新下行找到它
-                ch.close(); // 触发 onDisconnect → 清 ConnectionContext + Redis 会话表(幂等)
+                closeWithRetry(ch, KICK_CLOSE_RETRIES); // close 失败(isActive)重试
             });
             log.info("kick executed: user={} device={}", kick.getUserId(), kick.getDeviceId());
         } catch (Exception e) {
             log.error("handle kick error: {}", message, e);
         }
+    }
+
+    /** close 重试次数(首次之外重试几次;仍失败靠心跳兜底) */
+    private static final int KICK_CLOSE_RETRIES = 1;
+
+    /**
+     * 关闭目标连接;close 是异步的,回调里用 {@code isActive()} 判断是否真关掉,
+     * 仍活着则重试(重试仍在该连接 EventLoop 上执行,与 I/O 不交错)。
+     * 重试耗尽仍 active → 告警,交给心跳兜底(路由表已删 → 续期前 getNode=null → 关连接)。
+     */
+    private void closeWithRetry(Channel ch, int retriesLeft) {
+        ch.close().addListener((ChannelFutureListener) future -> {
+            if (ch.isActive()) {
+                if (retriesLeft > 0) {
+                    log.warn("kick close: channel still active, retry ({} left): {}", retriesLeft, ch);
+                    ch.eventLoop().execute(() -> closeWithRetry(ch, retriesLeft - 1));
+                } else {
+                    log.error("kick close FAILED after retries, rely on heartbeat (session already removed): {}",
+                            ch);
+                }
+            }
+        });
     }
 
     public void shutdown() {

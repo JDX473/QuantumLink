@@ -71,8 +71,8 @@ public class NettyConnectServer {
         this.signalConsumer = new DownstreamConsumer(config, nodeId, "server2signal", "signal");
         this.nodeReporter = new NodeReporter(config, nodeId);
         this.nodeReporter.start();
-        // 踢人订阅者:订阅 Redis im:kick,收到指令关本地目标连接(多端踢设备)
-        this.kickSubscriber = new KickSubscriber(config);
+        // 踢人订阅者:订阅 Redis im:kick,收到指令删路由表 + 关本地目标连接(多端踢设备)
+        this.kickSubscriber = new KickSubscriber(config, sessionRegistry);
 
         MessageDispatcher dispatcher = new MessageDispatcher(sessionRegistry, upstreamProducer);
 
@@ -110,7 +110,7 @@ public class NettyConnectServer {
      *
      * <p>用 {@code host:port} 作为节点唯一标识(不同端口天然不同节点)。
      * 它是 Redis 会话表的值、MQ tag 的来源、调度接口返回的地址,三处必须一致。
-     * 多节点:启动时用 {@code -Dim.connect.port=9998} 指定不同端口 → 不同节点。
+     * 多节点:启动时用 {@code -Dim.connect.port=19002} 指定不同端口 → 不同节点。
      */
     private String nodeId() {
         return "127.0.0.1:" + config.port;
