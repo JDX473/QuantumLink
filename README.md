@@ -6,31 +6,34 @@
 
 ```
 客户端(自定义 TCP)
-   │  HANDSHAKE / MSG / PING / DELIVER_ACK
+   │  HANDSHAKE / MSG / PING / DELIVER_ACK / READ_ACK
    ▼
-im-connect(port 9999,Netty 长连接层)
+im-connect(19001/19002,Netty 长连接层)
    │  握手鉴权 · 心跳 · EventLoop 异步化 · per-conversation 保序 · 会话注册
-   │  注册 Nacos · 上报连接数(最少连接调度的数据源)
+   │  注册 Nacos · 上报连接数(最少连接调度的数据源) · KICK 订阅(Redis Pub/Sub)
    │
-   │  RocketMQ(上行 client2server / deliver_ack)
+   │  RocketMQ(上行 client2server 消息 / client2signal 信令)
    ▼
-im-chat(port 8081,Spring Boot 业务层)
+im-chat(8081,Spring Boot 业务层)
    │  注册登录 · 幂等 · 落库(Redis INCR 取 seq) · 离线拉取 · 双 ACK 回执
-   │  RocketMQ(下行 server2client)
+   │  单聊/群聊已读 · 多端设备管理 + 踢人 · 群聊 · 最少连接调度
+   │  RocketMQ(下行 server2client 消息 / server2signal 信令)
    ▼
 im-connect → 目标客户端
 ```
 
 **两层解耦**:`im-connect`(长连接)与 `im-chat`(业务)**零代码依赖**,只经 RocketMQ + Redis 通信,可独立部署/扩容。
 
+**信令与消息分通道**(2026-08-09):MQ 上下行各拆独立信令 topic——消息走 `client2server`/`server2client`,信令(DELIVER_ACK/READ_ACK/ACK/DELIVER/READ/GROUP_READ)走 `client2signal`/`server2signal`,队列级隔离,信令积压/重试不影响消息投递。**多端踢人**走 Redis Pub/Sub(`im:kick` 频道),不走 MQ。
+
 ## 模块
 
 | 模块 | 端口 | 职责 | 状态 |
 |------|------|------|------|
 | im-common | — | 自定义 TCP 协议帧、DTO、工具 | ✅ 协议编解码+测试通过 |
-| im-connect | 9999 | Netty 长连接层:握手鉴权/心跳/保序/上行下行/注册Nacos+上报连接数 | ✅ 端到端打通 |
+| im-connect | 19001/19002 | Netty 长连接层:握手鉴权/心跳/保序/上下行分通道(消息+信令)/会话注册/注册Nacos+上报连接数/KICK订阅 | ✅ 端到端打通 |
 | im-gateway | 88 | 入口代理(负载均衡+Nacos 路由) | MVP 后置 |
-| im-chat | 8081 | 业务层:注册登录/幂等/落库/seq/离线拉取/双ACK/最少连接调度/群聊 | ✅ 端到端打通 |
+| im-chat | 8081 | 业务层:注册登录/幂等/落库/seq/离线拉取/双ACK/单聊+群聊已读/群聊/多端+踢人/信令分通道/最少连接调度 | ✅ 端到端打通 |
 | im-loadtest | — | 压测客户端 | MVP 后置 |
 | im-desktop(客户端) | — | Electron 桌面端(TCP 走主进程,UI 走渲染进程) | ✅ 窗口+登录+收发 |
 
@@ -50,8 +53,8 @@ JAVA_HOME="D:\\jdk17" mvn clean package -DskipTests
 # 3. 启动业务层
 java -jar im-chat/target/im-chat-1.0.0-SNAPSHOT.jar
 
-# 4. 启动长连接层
-java -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
+# 4. 启动长连接层(端口用 19001/19002,避开 Windows 动态端口;默认 9999)
+java -Dim.connect.port=19001 -jar im-connect/target/im-connect-1.0.0-SNAPSHOT.jar
 
 # 5. 注册登录拿 token + deviceId(握手时携带)
 curl -X POST http://127.0.0.1:8081/api/auth/register \
@@ -140,11 +143,13 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - [docs/与生产IM对比.md](docs/与生产IM对比.md) — **与真实 IM 的对比:核心同构 + 规模工程差距**(同构点 / 全 MQ vs RPC / 存储分片 / 大群扩散 / 有序性取舍 / 功能面差异 + 演进路线图 + 面试讲法)
 - [docs/小群设计.md](docs/小群设计.md) — **小群群聊设计思想**(读扩散 vs 写扩散取舍 + 信封 targets 按节点聚合 + 群内保序 + 边界 + 面试讲法;实现细节见 群聊设计)
 - [docs/群聊已读.md](docs/群聊已读.md) — **群聊已读:成员水位 + 预聚合计数(按需查询)**(为什么不能像单聊一样推 / 数据模型 / 预聚合机制 / Lua 原子 / 存储决策 / 异常面分析 + 改动清单)
+- [docs/多端踢人.md](docs/多端踢人.md) — **多端踢人:同端单设备 + 手动踢设备**(Redis Pub/Sub KICK / 删 token 兜底 / 本地判目标 / 踢人四步 / 心跳修复 + 踩坑)
+- [docs/信令分通道.md](docs/信令分通道.md) — **信令与消息分通道:队列级隔离**(topic 布局 / 各侧实现 / 配置不一致坑 / 为什么分通道)
 - [docs/EventLoop无锁.md](docs/EventLoop无锁.md) — **Netty EventLoop 为什么无锁**(单消费者 + MPSC 队列 + CAS;无锁与背压的区别;下行链路 20 消费线程 → eventLoop().execute() 的并发模型 + 面试问答)
 - [docs/鉴权设计.md](docs/鉴权设计.md) — **鉴权设计:一套凭证、两种协议、连接生命周期**(token 体系 / TCP握手 + HTTP鉴权 / 过期策略 / 吊销与踢下线 / 生命周期框架 / 攻击面 / 当前缺口清单)
 - [docs/鉴权完整篇章.md](docs/鉴权完整篇章.md) — **鉴权完整篇章:从凭证到连接生命周期**(深度整合——鉴权本质 / 三身份 / 双协议 / 握手深度(含 EventLoop 阻塞 bug)/ HTTP越权防护 / 过期与长连接 / 吊销与踢下线 / 生命周期 / 攻击面全景 / JWT vs 纯token / 缺口演进 / 面试问答)
 - [docs/慢客户端处理方案.md](docs/慢客户端处理方案.md) — **慢客户端处理方案:有界 + 降维**(Netty 水位/停读 / per-channel 有界队列 / MQ 位点必须提交 / 不可达→主动断连→增量拉取补偿 / 降维成"暂时离线" + 面试口述)
-- [docs/压测报告1.md](docs/压测报告1.md) — 压测报告 v1(首次压测发现的问题)
+- [docs/压测报告1.md](docs/压测报告1.md) — 压测报告 v1(首次压测发现的问题;**数据受 console.log/发送速率等假瓶颈污染,已被报告 2 否定,引用以报告 2 为准**)
 - [docs/压测报告2.md](docs/压测报告2.md) — 压测报告 v2(修复后:消息 100% 落库 0 丢失,30 连接 P50 79-108ms)
 
 ## 提交规矩

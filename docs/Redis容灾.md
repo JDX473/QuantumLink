@@ -75,6 +75,8 @@ UPDATE im_conversation SET last_seq = last_seq + 1 WHERE conversation_id = #{con
 
 发号慢一点(DB 行锁),但不瘫。代价:和 Redis 发号切换时 seq 可能不连续(两边各自发号),需要"取 max(Redis计数, DB last_seq)+1"对齐。这是**保可用性**的降级路径。
 
+> **现状提示**:`im_conversation.last_seq` 当前是**死字段**——实现已改 Redis INCR 发号,代码无人写 last_seq。方案 A 属"需先实现 last_seq 写入"的降级设计,非开箱即用。
+
 **方案 B(演进,大厂做法):发号服务独立**
 把发号从业务链路里拆出去,用**雪花算法 + 分段取号**(美团 Leaf、滴滴 Tinyid 模式):发号服务一次取一段号(如 1000 个)缓存,本地分配;Redis/DB 只做段号源的持久化。**发号彻底不依赖 Redis 在线可用性**,Redis 挂了已取的段号还能继续发。
 

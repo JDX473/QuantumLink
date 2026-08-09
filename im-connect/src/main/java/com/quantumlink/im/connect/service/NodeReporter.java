@@ -134,12 +134,12 @@ public class NodeReporter {
         }
     }
 
-    /** "127.0.0.1:9999" → "127.0.0.1" */
+    /** "127.0.0.1:19001" → "127.0.0.1" */
     private static String hostOf(String nodeId) {
         return nodeId.substring(0, nodeId.lastIndexOf(':'));
     }
 
-    /** "127.0.0.1:9999" → 9999 */
+    /** "127.0.0.1:19001" → 19001 */
     private static int portOf(String nodeId) {
         return Integer.parseInt(nodeId.substring(nodeId.lastIndexOf(':') + 1));
     }
