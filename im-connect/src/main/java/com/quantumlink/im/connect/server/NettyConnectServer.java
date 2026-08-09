@@ -10,6 +10,7 @@ import com.quantumlink.im.connect.handler.MessageDispatcher;
 import com.quantumlink.im.connect.handler.MessageHandler;
 import com.quantumlink.im.connect.handler.UpstreamProducer;
 import com.quantumlink.im.connect.service.NodeReporter;
+import com.quantumlink.im.connect.service.KickSubscriber;
 import com.quantumlink.im.connect.service.SessionRegistry;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFuture;
@@ -50,6 +51,7 @@ public class NettyConnectServer {
     private UpstreamProducer upstreamProducer;
     private DownstreamConsumer downstreamConsumer;
     private NodeReporter nodeReporter;
+    private KickSubscriber kickSubscriber;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
 
@@ -65,6 +67,8 @@ public class NettyConnectServer {
         this.downstreamConsumer = new DownstreamConsumer(config, nodeId);
         this.nodeReporter = new NodeReporter(config, nodeId);
         this.nodeReporter.start();
+        // 踢人订阅者:订阅 Redis im:kick,收到指令关本地目标连接(多端踢设备)
+        this.kickSubscriber = new KickSubscriber(config);
 
         MessageDispatcher dispatcher = new MessageDispatcher(sessionRegistry, upstreamProducer);
 
@@ -112,6 +116,7 @@ public class NettyConnectServer {
         if (nodeReporter != null) nodeReporter.shutdown();
         if (upstreamProducer != null) upstreamProducer.shutdown();
         if (downstreamConsumer != null) downstreamConsumer.shutdown();
+        if (kickSubscriber != null) kickSubscriber.shutdown();
         if (sessionRegistry != null) sessionRegistry.shutdown();
         if (workerGroup != null) workerGroup.shutdownGracefully();
         if (bossGroup != null) bossGroup.shutdownGracefully();

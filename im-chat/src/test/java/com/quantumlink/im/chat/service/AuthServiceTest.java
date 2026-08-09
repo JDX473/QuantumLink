@@ -211,4 +211,63 @@ class AuthServiceTest {
         assertEquals(false, m2.get("online"));
         assertTrue(m1.containsKey("deviceId") && m1.containsKey("deviceType") && m1.containsKey("lastActiveAt"));
     }
+
+    // ==================== 多端踢人 ====================
+
+    @Test
+    void login_kicksSameTypeDevices() {
+        User user = new User();
+        user.setUserId("u_1");
+        user.setPasswordHash("s:" + realHash("s", "pw"));
+        when(userMapper.selectOne(any())).thenReturn(user);
+        // 真实查询按 device_type=mobile 过滤 → 只有同类型旧设备被返回
+        Device oldMobile = new Device();
+        oldMobile.setDeviceId("d_old1"); oldMobile.setDeviceType("mobile"); oldMobile.setToken("tok_old1"); oldMobile.setUserId("u_1");
+        when(deviceMapper.selectList(any())).thenReturn(java.util.List.of(oldMobile));
+        when(deviceMapper.selectOne(any())).thenReturn(null); // 新设备无旧行
+
+        authService.login("alice", "pw", "mobile", "d_new");
+
+        // 踢同类型 mobile 旧设备:删 token + publish KICK
+        verify(redisTemplate).delete("im:token:tok_old1");
+        verify(redisTemplate).convertAndSend(eq("im:kick"), contains("d_old1"));
+    }
+
+    @Test
+    void login_doesNotKickSelf() {
+        User user = new User();
+        user.setUserId("u_1");
+        user.setPasswordHash("s:" + realHash("s", "pw"));
+        when(userMapper.selectOne(any())).thenReturn(user);
+        // 同类型旧设备就是正在登录/复用的 d_self
+        Device self = new Device();
+        self.setDeviceId("d_self"); self.setDeviceType("desktop"); self.setToken("tok_self"); self.setUserId("u_1");
+        when(deviceMapper.selectList(any())).thenReturn(java.util.List.of(self));
+        when(deviceMapper.selectOne(any())).thenReturn(self); // 复用 d_self
+
+        authService.login("alice", "pw", "desktop", "d_self");
+
+        verify(redisTemplate, never()).delete("im:token:tok_self");
+        verify(redisTemplate, never()).convertAndSend(eq("im:kick"), anyString());
+    }
+
+    @Test
+    void kickDevice_removesTokenAndPublishes() {
+        Device device = new Device();
+        device.setDeviceId("d_1"); device.setToken("tok_1"); device.setUserId("u_1");
+        when(deviceMapper.selectOne(any())).thenReturn(device);
+
+        boolean ok = authService.kickDevice("u_1", "d_1");
+
+        assertTrue(ok);
+        verify(redisTemplate).delete("im:token:tok_1");
+        verify(redisTemplate).convertAndSend(eq("im:kick"), contains("d_1"));
+    }
+
+    @Test
+    void kickDevice_notFound_returnsFalse() {
+        when(deviceMapper.selectOne(any())).thenReturn(null);
+        assertFalse(authService.kickDevice("u_1", "d_x"));
+        verify(redisTemplate, never()).delete(anyString());
+    }
 }
