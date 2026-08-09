@@ -50,6 +50,7 @@ public class NettyConnectServer {
     private SessionRegistry sessionRegistry;
     private UpstreamProducer upstreamProducer;
     private DownstreamConsumer downstreamConsumer;
+    private DownstreamConsumer signalConsumer;
     private NodeReporter nodeReporter;
     private KickSubscriber kickSubscriber;
     private EventLoopGroup bossGroup;
@@ -64,7 +65,10 @@ public class NettyConnectServer {
         String nodeId = nodeId();
         this.sessionRegistry = new SessionRegistry(config);
         this.upstreamProducer = new UpstreamProducer(config);
-        this.downstreamConsumer = new DownstreamConsumer(config, nodeId);
+        // 下行分两个通道:server2client(消息)+ server2signal(信令)——信令不占消息队列,
+        // 信令积压/重试不影响消息投递(队列级隔离)
+        this.downstreamConsumer = new DownstreamConsumer(config, nodeId, "server2client", "msg");
+        this.signalConsumer = new DownstreamConsumer(config, nodeId, "server2signal", "signal");
         this.nodeReporter = new NodeReporter(config, nodeId);
         this.nodeReporter.start();
         // 踢人订阅者:订阅 Redis im:kick,收到指令关本地目标连接(多端踢设备)
@@ -116,6 +120,7 @@ public class NettyConnectServer {
         if (nodeReporter != null) nodeReporter.shutdown();
         if (upstreamProducer != null) upstreamProducer.shutdown();
         if (downstreamConsumer != null) downstreamConsumer.shutdown();
+        if (signalConsumer != null) signalConsumer.shutdown();
         if (kickSubscriber != null) kickSubscriber.shutdown();
         if (sessionRegistry != null) sessionRegistry.shutdown();
         if (workerGroup != null) workerGroup.shutdownGracefully();

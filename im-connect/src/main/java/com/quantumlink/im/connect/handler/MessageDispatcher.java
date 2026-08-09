@@ -133,7 +133,8 @@ public class MessageDispatcher {
 
     /**
      * 已送达回执(DELIVER_ACK):接收方 B 收到消息后回执。
-     * 解析 AckPayload,发到 {@code deliver_ack} topic,chat 消费后更新消息状态并回 DELIVER 给 A。
+     * 解析 AckPayload,发到 {@code client2signal}(信令通道,与消息通道隔离),
+     * chat 消费后更新消息状态并回 DELIVER 给 A。
      */
     public void dispatchDeliverAck(String userId, String deviceId, ImFrame frame) {
         AckPayload ack = ProtocolUtil.parseBody(frame, AckPayload.class);
@@ -146,7 +147,7 @@ public class MessageDispatcher {
         // 按会话选同一队列(与消息同队列保持顺序);这里 conversationId 由客户端回执携带
         String conversationId = ack.getConversationId();
         String json = JsonUtil.toJson(ack);
-        boolean ok = upstreamProducer.sendToTopic("deliver_ack", json, conversationId == null ? "" : conversationId);
+        boolean ok = upstreamProducer.sendToTopic("client2signal", json, conversationId == null ? "" : conversationId);
         if (!ok) {
             log.error("deliver_ack send failed: user={} serverMsgId={}", userId, ack.getServerMsgId());
         }
@@ -154,7 +155,7 @@ public class MessageDispatcher {
 
     /**
      * 已读上报(READ_ACK):接收方 B 打开会话/看到新消息后上报水位。
-     * 解析 ReadReportPayload,补 readerId(从连接上下文,不信任客户端),发到 {@code read_report} topic。
+     * 解析 ReadReportPayload,补 readerId(从连接上下文,不信任客户端),发到 {@code client2signal}(信令通道)。
      * chat 消费后推进水位并推 READ 事件给对端 A。
      */
     public void dispatchReadAck(String userId, String deviceId, ImFrame frame) {
@@ -168,7 +169,7 @@ public class MessageDispatcher {
 
         String conversationId = report.getConversationId();
         String json = JsonUtil.toJson(report);
-        boolean ok = upstreamProducer.sendToTopic("read_report", json, conversationId == null ? "" : conversationId);
+        boolean ok = upstreamProducer.sendToTopic("client2signal", json, conversationId == null ? "" : conversationId);
         if (!ok) {
             log.error("read_report send failed: user={} conv={}", userId, conversationId);
         }

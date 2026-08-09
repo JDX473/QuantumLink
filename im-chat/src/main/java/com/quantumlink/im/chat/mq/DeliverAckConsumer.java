@@ -48,7 +48,7 @@ public class DeliverAckConsumer {
         try {
             consumer = new DefaultMQPushConsumer("im-chat-deliver-consumer");
             consumer.setNamesrvAddr(namesrvAddr);
-            consumer.subscribe("deliver_ack", "*");
+            consumer.subscribe("client2signal", "*"); // 信令通道:DELIVER_ACK/READ_ACK 都在这,按字段区分
             consumer.registerMessageListener((MessageListenerConcurrently) (msgs, context) -> {
                 for (MessageExt msg : msgs) {
                     try {
@@ -61,7 +61,7 @@ public class DeliverAckConsumer {
                 return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
             });
             consumer.start();
-            log.info("deliver ack consumer started: topic=deliver_ack");
+            log.info("deliver ack consumer started: topic=client2signal");
         } catch (Exception e) {
             throw new IllegalStateException("start deliver ack consumer failed", e);
         }
