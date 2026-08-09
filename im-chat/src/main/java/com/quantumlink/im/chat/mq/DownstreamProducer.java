@@ -51,16 +51,25 @@ public class DownstreamProducer {
     @Value("${rocketmq.topics.downstream}")
     private String downstreamTopic;
 
+    @Value("${rocketmq.topics.signalDownstream}")
+    private String signalDownstreamTopic;
+
     @PostConstruct
     public void start() {
         producer.setNamesrvAddr(namesrvAddr);
         producer.setSendMsgTimeout(3000);
         try {
             producer.start();
-            log.info("downstream producer started: namesrv={} topic={}", namesrvAddr, downstreamTopic);
+            log.info("downstream producer started: namesrv={} msgTopic={} signalTopic={}",
+                    namesrvAddr, downstreamTopic, signalDownstreamTopic);
         } catch (Exception e) {
             throw new IllegalStateException("start downstream producer failed", e);
         }
+    }
+
+    /** 按信封类型选 topic:消息走消息通道,信令(ACK/DELIVER/READ/GROUP_READ)走信令通道——信令不占消息队列 */
+    private String topicFor(String contentType) {
+        return DownstreamEnvelope.TYPE_MSG.equals(contentType) ? downstreamTopic : signalDownstreamTopic;
     }
 
     /**
@@ -77,7 +86,7 @@ public class DownstreamProducer {
         envelope.setDeviceId(targetDeviceId);
         envelope.setType(contentType);
         envelope.setData(data);
-        send(JsonUtil.toJson(envelope), targetUserId, targetDeviceId);
+        send(JsonUtil.toJson(envelope), targetUserId, targetDeviceId, topicFor(contentType));
     }
 
     /**
@@ -108,12 +117,13 @@ public class DownstreamProducer {
             envelope.setTargets(e.getValue());
             envelope.setType(contentType);
             envelope.setData(data);
-            Message msg = new Message(downstreamTopic, JsonUtil.toJson(envelope).getBytes(StandardCharsets.UTF_8));
+            String topic = topicFor(contentType);
+            Message msg = new Message(topic, JsonUtil.toJson(envelope).getBytes(StandardCharsets.UTF_8));
             try {
                 msg.setTags(e.getKey());
                 SendResult result = producer.send(msg);
                 log.info("group downstream sent: topic={} tag={} members={} msgId={}",
-                        downstreamTopic, e.getKey(), e.getValue().size(), result.getMsgId());
+                        topic, e.getKey(), e.getValue().size(), result.getMsgId());
             } catch (Exception ex) {
                 log.error("group downstream send failed: tag={} members={}", e.getKey(), e.getValue().size(), ex);
             }
@@ -142,7 +152,7 @@ public class DownstreamProducer {
      * 多端时 targetDeviceId 为 null,需要查询该用户所有设备的会话记录。
      * MVP 先支持单设备(直接查 userId:deviceId),多端全推后续增强。
      */
-    private void send(String json, String targetUserId, String targetDeviceId) {
+    private void send(String json, String targetUserId, String targetDeviceId, String topic) {
         // 查 Redis 会话表定位目标节点:im:session:{userId}:{deviceId} → nodeId
         String nodeId = null;
         if (targetDeviceId != null) {
@@ -158,12 +168,12 @@ public class DownstreamProducer {
             return;
         }
 
-        Message msg = new Message(downstreamTopic, json.getBytes(StandardCharsets.UTF_8));
+        Message msg = new Message(topic, json.getBytes(StandardCharsets.UTF_8));
         try {
             // 打目标节点 tag:只有订阅该 tag 的 connect 节点消费
             msg.setTags(nodeId);
             SendResult result = producer.send(msg);
-            log.info("downstream sent: topic={} tag={} msgId={}", downstreamTopic, nodeId, result.getMsgId());
+            log.info("downstream sent: topic={} tag={} msgId={}", topic, nodeId, result.getMsgId());
         } catch (Exception e) {
             log.error("downstream send failed: user={} tag={}", targetUserId, nodeId, e);
             // Phase 2:ACK 发送失败要补偿(重试/记录未确认消息)

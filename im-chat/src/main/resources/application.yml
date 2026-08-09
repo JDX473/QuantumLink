@@ -30,8 +30,10 @@ rocketmq:
   name-server: 127.0.0.1:9876
   producer-group: im-chat-producer
   topics:
-    upstream: client2server     # connect → chat(上行)
-    downstream: server2client   # chat → connect(下行)
+    upstream: client2server     # connect → chat(上行消息)
+    downstream: server2client   # chat → connect(下行消息)
+    signalUpstream: client2signal    # connect → chat(上行信令:DELIVER_ACK/READ_ACK)
+    signalDownstream: server2signal  # chat → connect(下行信令:ACK/DELIVER/READ/GROUP_READ)
 
 # MinIO 对象存储(头像)
 # 注意:key 用 accessKey/secretKey(不用 access-key),避免与系统环境变量 MINIO_ACCESS_KEY 冲突

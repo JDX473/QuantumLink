@@ -39,7 +39,7 @@ public class ReadAckConsumer {
         try {
             consumer = new DefaultMQPushConsumer("im-chat-read-consumer");
             consumer.setNamesrvAddr(namesrvAddr);
-            consumer.subscribe("read_report", "*");
+            consumer.subscribe("client2signal", "*"); // 信令通道:DELIVER_ACK/READ_ACK 都在这,按字段区分
             consumer.registerMessageListener((MessageListenerConcurrently) (msgs, context) -> {
                 for (MessageExt msg : msgs) {
                     try {
@@ -52,7 +52,7 @@ public class ReadAckConsumer {
                 return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
             });
             consumer.start();
-            log.info("read ack consumer started: topic=read_report");
+            log.info("read ack consumer started: topic=client2signal");
         } catch (Exception e) {
             throw new IllegalStateException("start read ack consumer failed", e);
         }
