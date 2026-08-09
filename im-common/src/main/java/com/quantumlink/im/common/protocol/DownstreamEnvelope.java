@@ -6,7 +6,8 @@ import lombok.Setter;
 import java.util.List;
 
 /**
- * 下行信封:chat → connect({@code server2client})的统一消息结构。
+ * 下行信封:chat → connect 的统一消息结构。消息与信令分通道:
+ * 消息(MSG)走 {@code server2client},信令(ACK/READ/GROUP_READ)走 {@code server2signal}。
  *
  * <p>结构:{@code {type, to, targets, data}}。
  * <ul>
@@ -38,7 +39,7 @@ public class DownstreamEnvelope {
     /** 群播:该节点上的目标成员 userId 列表(connect 遍历推送)。单播时为空 */
     private List<String> targets;
 
-    /** 内容类型:ACK(回执)/ MSG(消息) */
+    /** 内容类型:ACK(回执)/ MSG(消息)/ READ(已读事件)/ GROUP_READ(群已读计数) */
     private String type;
 
     /** 实际内容(AckPayload 或 MessagePayload 对象) */

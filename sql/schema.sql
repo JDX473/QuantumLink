@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS `im_device` (
 CREATE TABLE IF NOT EXISTS `im_conversation` (
     `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `conversation_id` VARCHAR(128) NOT NULL COMMENT 'A#B',
-    `last_seq`        BIGINT       NOT NULL DEFAULT 0 COMMENT '事务内原子自增',
+    `last_seq`        BIGINT       NOT NULL DEFAULT 0 COMMENT '遗留字段:seq 已改 Redis INCR 取号(im:conv:seq:{conv}),当前无代码写入',
     `last_msg_id`     VARCHAR(64)  NULL,
     `last_msg_time`   DATETIME     NULL,
     `created_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,

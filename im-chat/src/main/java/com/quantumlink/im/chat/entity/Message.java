@@ -6,17 +6,17 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 /**
- * 消息实体。主键自增即 server_msg_id;client_msg_id 客户端生成(幂等去重键)。
+ * 消息实体。主键 = server_msg_id,应用雪花(ASSIGN_ID)生成(多 chat 实例全局唯一);
+ * client_msg_id 客户端生成 UUID(幂等去重键)。
  */
 @Data
 @TableName("im_message")
 public class Message {
-    /** 主键自增,即 server_msg_id */
-    /** 主键 = server_msg_id。用雪花(ASSIGN_ID):多 chat 实例写消息需全局唯一,DB 自增会撞 */
+    /** 主键 = server_msg_id,用雪花(ASSIGN_ID):多 chat 实例写消息需全局唯一,DB 自增会撞 */
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
-    /** 客户端生成(device_id+自增),幂等去重键 */
+    /** 客户端生成(UUID),幂等去重键 */
     private String clientMsgId;
 
     /** 会话 ID:A#B */
@@ -28,7 +28,7 @@ public class Message {
     private String msgType;
     private String content;
 
-    /** 会话内单调序号(事务内原子自增) */
+    /** 会话内单调序号(业务层 Redis INCR 取号) */
     private Long seq;
 
     /** SENT / DELIVERED */
