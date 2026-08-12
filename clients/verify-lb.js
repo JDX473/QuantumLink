@@ -9,7 +9,7 @@
  * 用法: node verify-lb.js
  */
 const { ImClient } = require('./client-core');
-const API = 'http://127.0.0.1:8081';
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
 
 async function registerOrLogin(username, password) {
   let r = await fetch(API + '/api/auth/login', {

@@ -5,8 +5,8 @@
  * 3. alice 发群消息 → 验证群 seq 递增
  * 4. 下线 alice → jds 再发 → alice 上线拉取(离线补拉)
  */
-const { ImClient } = require('E:/QIUZHAO/IM/clients/client-core');
-const API = 'http://127.0.0.1:8081';
+const { ImClient } = require('./client-core');
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function login(u, p) {

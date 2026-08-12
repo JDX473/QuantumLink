@@ -1,8 +1,8 @@
 // 两个 bug 修复验证:
 // 1. 面对面建群后群列表能查到(之前 groupId 不一致)
 // 2. 群已读:A发消息(发送者自动计入水位)→ B读到 → A实时收到 GROUP_READ 推送(readCount)
-const { ImClient } = require('E:/QIUZHAO/IM/clients/client-core.js');
-const API = 'http://127.0.0.1:8081';
+const { ImClient } = require('../clients/client-core.js');
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function post(p, b, token) { const r = await fetch(API + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': 'Bearer ' + token } : {}) }, body: JSON.stringify(b) }); return r.json(); }
 async function get(p, t) { const r = await fetch(API + p, { headers: { 'Authorization': 'Bearer ' + t } }); return r.json(); }

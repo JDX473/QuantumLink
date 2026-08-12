@@ -1,7 +1,7 @@
 // 群已读端到端验证:
 // A 发 3 条群消息 → A 进群上报已读(计数=1)→ B 进群上报(计数=2)→ A 再进群(不重复,仍=2)
-const { ImClient } = require('E:/QIUZHAO/IM/clients/client-core.js');
-const API = 'http://127.0.0.1:8081';
+const { ImClient } = require('../clients/client-core.js');
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function post(p, b, token) { const r = await fetch(API + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': 'Bearer ' + token } : {}) }, body: JSON.stringify(b) }); return r.json(); }
 async function get(p, t) { const r = await fetch(API + p, { headers: { 'Authorization': 'Bearer ' + t } }); return r.json(); }

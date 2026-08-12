@@ -14,7 +14,9 @@
  * 消息链路瓶颈(Redis keys/executor/落库)在低连接数下即可暴露。
  */
 const { ImClient } = require('../client-core');
-const API = 'http://127.0.0.1:8081';
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
+const HOST = process.env.IM_CONNECT_HOST || '127.0.0.1';
+const PORTS = (process.env.IM_CONNECT_PORTS || '19001 19002').split(' ').map(Number);
 
 const CONNECTIONS = parseInt(process.argv[2] || '100');
 const DURATION_S = parseInt(process.argv[3] || '20');
@@ -46,7 +48,7 @@ let sent = 0, acked = 0, resent = 0;
 const latencies = [];
 
 function connectTo(node, u, handlers) {
-  const c = new ImClient({ host: '127.0.0.1', port: node, token: u.token, deviceId: u.deviceId, deviceType: 'loadtest',
+  const c = new ImClient({ host: HOST, port: node, token: u.token, deviceId: u.deviceId, deviceType: 'loadtest',
     quiet: true, // 压测静默:关闭高频日志,避免 console.log 阻塞 EventLoop
     handlers: {
       onConnected: (uid) => { if (handlers.onConnected) handlers.onConnected(uid); },
@@ -91,10 +93,10 @@ async function main() {
   }
   console.log(`登录完成: ${CONNECTIONS} 用户, 耗时 ${Date.now() - t0}ms`);
 
-  // 2. 连接(轮流连 19001/19002 模拟跨节点)
+  // 2. 连接(轮流连多个节点模拟跨节点;IM_CONNECT_PORTS 覆盖)
   const clients = [];
   for (let i = 0; i < CONNECTIONS; i++) {
-    const port = i % 2 === 0 ? 19001 : 19002;
+    const port = PORTS[i % PORTS.length];
     const c = connectTo(port, users[i], {});
     clients.push(c);
   }

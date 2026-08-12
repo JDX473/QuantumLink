@@ -75,13 +75,18 @@ scripts/start-middleware.cmd
 
 # 测试
 mvn test
+
+# Linux/云部署(Windows 用 start-all.cmd;Linux 用 shell 脚本,环境变量 IM_* 覆盖)
+# 见 scripts/start-all.sh 头部注释:IM_API/IM_MYSQL_*/IM_REDIS_*/IM_ROCKETMQ_NAMESRV/IM_NACOS_ADDR/IM_MINIO_*/IM_CONNECT_PORTS
+scripts/start-all.sh        # 启动 chat + connect ×N(中间件自行装好)
+scripts/stop-all.sh         # 停止 chat + connect
 ```
 
 ## 本机中间件(不用 Docker,用户本地已装)
 
 - MySQL 8: `127.0.0.1:3306`, root/123456, 库 `quantumlink`(独立库,与旧项目 `im` 库隔离)
 - Redis: `F:\Study\Redis4`(redis-server.exe, 127.0.0.1:6379, 无密码)
-- RocketMQ 5.3.1: `F:\Study\RocketMQ\rocketmq-all-5.3.1-bin-release`(namesrv 9876 / broker 10911, 本机直接跑 .cmd)
+- RocketMQ 5.3.1: `F:\Study\RocketMQ\rocketmq-all-5.3.1-bin-release`(namesrv 9876 / broker 10911, 本机直接跑 .cmd)。**坑**:broker 启动会把当时的网卡 IP(如 VPN)写死进 `brokerIP1` 注册到 namesrv,网卡消失后客户端连不上(`RemotingConnectException: connect to <旧IP>:10911 failed`)——用 `conf/broker-local.conf`(`brokerIP1=127.0.0.1`)重启 broker 修复(云上多网卡同样要注意)。
 - Nacos 2.5: `F:\Study\Nacos\nacos`(standalone,端口 8850——本机 JRaft 7848 被 wpspdf 占用故整体偏移,HTTP 8850/gRPC 9850/JRaft 7850;启动 `bin/startup.cmd -m standalone` 或直接 java -Dserver.port=8850)
 - 构建需 JDK 17(`D:\jdk17`), 本机默认 JAVA_HOME 是 JDK8
 

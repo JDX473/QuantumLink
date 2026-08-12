@@ -8,7 +8,7 @@ const net = require('net');
 const crypto = require('crypto');
 const { FrameType, encode, FrameDecoder } = require('../clients/protocol');
 const { ImClient } = require('../clients/client-core');
-const API = 'http://127.0.0.1:8081';
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function post(p, b) { const r = await fetch(API + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }); return r.json(); }
 

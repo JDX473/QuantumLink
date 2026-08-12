@@ -1,5 +1,11 @@
+# QuantumLink im-chat 配置
+# 云部署:用环境变量 IM_* 覆盖,不设则用默认值(本机/单机云默认)。
+# 例如: IM_MYSQL_HOST=1.2.3.4 IM_MYSQL_PASSWORD=xxx IM_REDIS_HOST=1.2.3.4 \
+#        IM_ROCKETMQ_NAMESRV=1.2.3.4:9876 IM_NACOS_ADDR=1.2.3.4:8850 \
+#        IM_MINIO_ENDPOINT=http://1.2.3.4:9000 java -jar im-chat.jar
+
 server:
-  port: 8081
+  port: ${IM_CHAT_PORT:8081}
 
 spring:
   application:
@@ -11,15 +17,15 @@ spring:
       max-request-size: 10MB
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    # 本机 MySQL:3306,root/123456,库 quantumlink(独立库,与旧项目 im 隔离)
-    # 注意:Connector/J 8.3 的 characterEncoding 只认 utf8(MySQL 的 utf8 即 utf8mb4)
-    url: jdbc:mysql://127.0.0.1:3306/quantumlink?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: root
-    password: 123456
+    # Connector/J 8.3 的 characterEncoding 只认 utf8(MySQL 的 utf8 即 utf8mb4)
+    url: jdbc:mysql://${IM_MYSQL_HOST:127.0.0.1}:${IM_MYSQL_PORT:3306}/${IM_MYSQL_DB:quantumlink}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${IM_MYSQL_USER:root}
+    password: ${IM_MYSQL_PASSWORD:123456}
   data:
     redis:
-      host: 127.0.0.1
-      port: 6379
+      host: ${IM_REDIS_HOST:127.0.0.1}
+      port: ${IM_REDIS_PORT:6379}
+      password: ${IM_REDIS_PASSWORD:}
 
 mybatis-plus:
   configuration:
@@ -27,7 +33,7 @@ mybatis-plus:
 
 # RocketMQ 配置(本机 namesrv)
 rocketmq:
-  name-server: 127.0.0.1:9876
+  name-server: ${IM_ROCKETMQ_NAMESRV:127.0.0.1:9876}
   producer-group: im-chat-producer
   topics:
     upstream: client2server     # connect → chat(上行消息)
@@ -38,12 +44,12 @@ rocketmq:
 # MinIO 对象存储(头像)
 # 注意:key 用 accessKey/secretKey(不用 access-key),避免与系统环境变量 MINIO_ACCESS_KEY 冲突
 minio:
-  endpoint: http://127.0.0.1:9000
-  accessKey: minioadmin
-  secretKey: minioadmin
-  bucket: avatar
+  endpoint: ${IM_MINIO_ENDPOINT:http://127.0.0.1:9000}
+  accessKey: ${IM_MINIO_ACCESS_KEY:minioadmin}
+  secretKey: ${IM_MINIO_SECRET_KEY:minioadmin}
+  bucket: ${IM_MINIO_BUCKET:avatar}
 
 # Nacos 服务注册中心:connect 启动注册 im-connect 实例,chat 查询做服务发现
 # + 最少连接调度(替代旧的静态 connect.nodes 配置)
 nacos:
-  server-addr: 127.0.0.1:8850
+  server-addr: ${IM_NACOS_ADDR:127.0.0.1:8850}

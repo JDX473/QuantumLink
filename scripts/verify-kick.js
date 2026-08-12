@@ -1,8 +1,8 @@
 // 多端踢人验证:
 // 1. 同端类型踢人:U 在 mobile 设备A 登录并连接 → 再在 mobile 设备B 登录 → A 被踢(连接断开)
 // 2. 设备踢除端点:POST /api/auth/devices/{deviceId}/kick 踢掉指定设备
-const { ImClient } = require('E:/QIUZHAO/IM/clients/client-core.js');
-const API = 'http://127.0.0.1:8081';
+const { ImClient } = require('../clients/client-core.js');
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function post(p, b, t) { const r = await fetch(API + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(t ? { 'Authorization': 'Bearer ' + t } : {}) }, body: JSON.stringify(b) }); return r.json(); }
 async function get(p, t) { const r = await fetch(API + p, { headers: { 'Authorization': 'Bearer ' + t } }); return r.json(); }

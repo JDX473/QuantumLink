@@ -9,7 +9,6 @@ import io.lettuce.core.api.sync.RedisCommands;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -39,11 +38,7 @@ public class SessionRegistry {
     private final RedisAsyncCommands<String, String> asyncCommands;
 
     public SessionRegistry(ConnectConfig config) {
-        RedisURI uri = RedisURI.builder()
-                .withHost(config.redisHost)
-                .withPort(config.redisPort)
-                .withTimeout(Duration.ofSeconds(3))
-                .build();
+        RedisURI uri = config.redisUri();
         this.redisClient = RedisClient.create(uri);
         this.connection = redisClient.connect();
         this.commands = connection.sync();

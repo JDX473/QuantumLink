@@ -12,7 +12,6 @@ import io.lettuce.core.api.sync.RedisCommands;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -87,11 +86,7 @@ public class NodeReporter {
 
     private void startConnCountReporter() {
         // Lettuce 单连接多路复用(仿 SessionRegistry,契合 connect 非阻塞模型)
-        RedisURI uri = RedisURI.builder()
-                .withHost(config.redisHost)
-                .withPort(config.redisPort)
-                .withTimeout(Duration.ofSeconds(3))
-                .build();
+        RedisURI uri = config.redisUri();
         this.redisClient = RedisClient.create(uri);
         this.redisConnection = redisClient.connect();
         this.commands = redisConnection.sync();

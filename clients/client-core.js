@@ -58,8 +58,8 @@ class ImClient {
 
     // 增量拉取:conversationId → 已同步的最大 seq(位点)
     this.conversationLastSeq = new Map();
-    // 离线补拉 HTTP 接口(im-chat 业务层)
-    this.apiBase = opts.apiBase || 'http://127.0.0.1:8081';
+    // 离线补拉 HTTP 接口(im-chat 业务层);可用 IM_API 环境变量覆盖(云部署)
+    this.apiBase = opts.apiBase || process.env.IM_API || 'http://127.0.0.1:8081';
   }
 
   // ==================== 连接生命周期 ====================

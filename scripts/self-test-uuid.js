@@ -2,9 +2,9 @@
 // 1. 快速连发 20 条 → 全部 ACK 匹配、pending 清空、B 收到 20 条、DB 恰好 20 条(无重复)
 // 2. 同 UUID 手动重传 → 服务端返回相同 seq,DB 不新增
 // 3. 断线后发送(排队)→ 重连 flush → 用同一 UUID 重发 → 不重复落库
-const { ImClient } = require('E:/QIUZHAO/IM/clients/client-core.js');
-const { FrameType } = require('E:/QIUZHAO/IM/clients/protocol.js');
-const API = 'http://127.0.0.1:8081';
+const { ImClient } = require('../clients/client-core.js');
+const { FrameType } = require('../clients/protocol.js');
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function post(p, b) { return (await (await fetch(API+p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})).json()); }
 function connect(a, handlers) { return new Promise(async (res, rej) => {
