@@ -77,9 +77,10 @@ scripts/start-middleware.cmd
 mvn test
 
 # Linux/云部署(Windows 用 start-all.cmd;Linux 用 shell 脚本,环境变量 IM_* 覆盖)
-# 见 scripts/start-all.sh 头部注释:IM_API/IM_MYSQL_*/IM_REDIS_*/IM_ROCKETMQ_NAMESRV/IM_NACOS_ADDR/IM_MINIO_*/IM_CONNECT_PORTS
-scripts/start-all.sh        # 启动 chat + connect ×N(中间件自行装好)
-scripts/stop-all.sh         # 停止 chat + connect
+# 完整步骤见 docs/云部署.md:一键装中间件 → 配置 → 启动
+scripts/install-middleware.sh  # 一键装中间件(Ubuntu/Debian:JDK/MySQL/Redis/RocketMQ/Nacos/MinIO)
+scripts/start-all.sh           # 启动 chat×N + connect×N(默认 8081/8082 + 19001/19002)
+scripts/stop-all.sh            # 停止 chat + connect
 ```
 
 ## 本机中间件(不用 Docker,用户本地已装)

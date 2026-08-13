@@ -43,6 +43,9 @@ Java 17 · Maven · Netty 4.1 · RocketMQ 5 · Redis 7 · MySQL 8 · Spring Boot
 
 ## 快速开始
 
+> **☁️ Linux / 云服务器部署**：见 [docs/云部署.md](docs/云部署.md)——原生安装中间件 + 一键启动，
+> 命令级、含 8C16G 资源参数，可直接丢给 AI 照做。**本机 Windows 开发**用下面的 start-middleware.cmd。
+
 ```bash
 # 1. 启动本机中间件(RocketMQ + Redis + Nacos;MySQL 假设已作为 Windows 服务运行)
 scripts/start-middleware.cmd
