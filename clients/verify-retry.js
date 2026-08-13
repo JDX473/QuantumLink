@@ -8,41 +8,48 @@
  * 用法: node verify-retry.js
  */
 const { ImClient } = require('./client-core');
+const { newUser } = require('./test-lib');
 
-let confirmed = 0;
-let failed = 0;
+(async () => {
+  const a = await newUser('retryA');
+  const b = await newUser('retryB');
+  console.log(`A=${a.userId} B=${b.userId}`);
 
-const client = new ImClient({
-  host: '127.0.0.1', port: 19001,
-  token: 'test-token-123', deviceId: 'D-retry', deviceType: 'desktop',
-  handlers: {
-    onConnected: (userId) => {
-      console.log(`[retry] 已连接 userId=${userId}`);
-      // 连续发 3 条消息,观察确认机
-      for (let i = 1; i <= 3; i++) {
-        const cmid = client.sendMessage({
-          receiverId: 'user-B',
-          msgType: 'TEXT',
-          content: `retry test msg ${i}`,
-          clientTime: Date.now(),
-        });
-        console.log(`[retry] 已发送 ${i}: clientMsgId=${cmid}`);
-      }
-    },
-    onAck: (ack) => {
-      confirmed++;
-      console.log(`[retry] ★确认 ${ack.clientMsgId}: serverMsgId=${ack.serverMsgId} seq=${ack.seq}`);
-      if (confirmed >= 3) {
-        console.log(`\n=== 结果: 3 条消息全部确认(${failed} 条失败) ===`);
-        setTimeout(() => { process.exit(0); }, 500);
-      }
-    },
-    onSendFailed: (msg) => {
-      failed++;
-      console.error(`[retry] 发送失败: ${msg.clientMsgId}`);
-    },
-  },
-});
+  let confirmed = 0;
+  let failed = 0;
 
-client.connect();
-setTimeout(() => { console.error('超时:未全部确认'); process.exit(1); }, 20000);
+  const client = new ImClient({
+    host: '127.0.0.1', port: 19001,
+    token: a.token, deviceId: a.deviceId, deviceType: 'desktop',
+    handlers: {
+      onConnected: (userId) => {
+        console.log(`[retry] 已连接 userId=${userId}`);
+        // 连续发 3 条消息,观察确认机
+        for (let i = 1; i <= 3; i++) {
+          const cmid = client.sendMessage({
+            receiverId: b.userId,
+            msgType: 'TEXT',
+            content: `retry test msg ${i}`,
+            clientTime: Date.now(),
+          });
+          console.log(`[retry] 已发送 ${i}: clientMsgId=${cmid}`);
+        }
+      },
+      onAck: (ack) => {
+        confirmed++;
+        console.log(`[retry] ★确认 ${ack.clientMsgId}: serverMsgId=${ack.serverMsgId} seq=${ack.seq}`);
+        if (confirmed >= 3) {
+          console.log(`\n=== 结果: 3 条消息全部确认(${failed} 条失败) ===`);
+          setTimeout(() => { process.exit(0); }, 500);
+        }
+      },
+      onSendFailed: (msg) => {
+        failed++;
+        console.error(`[retry] 发送失败: ${msg.clientMsgId}`);
+      },
+    },
+  });
+
+  client.connect();
+  setTimeout(() => { console.error('超时:未全部确认'); process.exit(1); }, 20000);
+})().catch(e => { console.error('FAIL:', e.message); process.exit(1); });
