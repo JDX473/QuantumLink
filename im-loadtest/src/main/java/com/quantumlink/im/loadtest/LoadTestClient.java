@@ -315,9 +315,10 @@ public class LoadTestClient {
             }, HEARTBEAT_MS, HEARTBEAT_MS, TimeUnit.MILLISECONDS);
         }
 
-        /** 定时发消息:每 sendInterval 一条,发给配对用户;clientMsgId=UUID 幂等键 */
+        /** 定时发消息:每 sendInterval 一条,发给配对用户;clientMsgId=UUID 幂等键。速率 0 = 纯连接模式(只建连+心跳) */
         private void startSender() {
-            long intervalMs = Math.max(1, 1000 / Math.max(1, msgPerSec));
+            if (msgPerSec <= 0) return;   // 0 速率:只建连 + 心跳,测接入层连接承载(chat 不受业务压力)
+            long intervalMs = Math.max(1, 1000 / msgPerSec);
             channel.eventLoop().scheduleAtFixedRate(this::sendMessage, 500, intervalMs, TimeUnit.MILLISECONDS);
         }
 
