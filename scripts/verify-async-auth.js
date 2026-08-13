@@ -23,7 +23,7 @@ async function post(p, b) { const r = await fetch(API + p, { method: 'POST', hea
   // B:client-core 正常连接
   let bGot = false;
   const b = new ImClient({
-    host: '127.0.0.1', port: 19001, token: B.token, deviceId: B.deviceId, deviceType: 'desktop', apiBase: API,
+    host: process.env.IM_CONNECT_HOST || '127.0.0.1', port: 19001, token: B.token, deviceId: B.deviceId, deviceType: 'desktop', apiBase: API,
     handlers: { onConnected: () => console.log('[B] 握手成功'), onMessage: (m) => { console.log('[B] 收到:', m.content, 'seq=' + m.seq); bGot = true; } },
   });
   b.connect();
@@ -34,7 +34,7 @@ async function post(p, b) { const r = await fetch(API + p, { method: 'POST', hea
     const dec = new FrameDecoder();
     let gotAck = false, gotStoreAck = false;
     const cmid = crypto.randomUUID();
-    const sock = net.connect(19001, '127.0.0.1', () => {
+    const sock = net.connect(19001, process.env.IM_CONNECT_HOST || '127.0.0.1', () => {
       console.log('[A-raw] TCP 连上,立即连发 HANDSHAKE + MSG(不等待握手 ACK)');
       sock.write(encode(FrameType.HANDSHAKE, { token: A.token, deviceId: A.deviceId }));
       sock.write(encode(FrameType.MSG, { clientMsgId: cmid, receiverId: B.userId, msgType: 'TEXT', content: 'hi ' + s }));

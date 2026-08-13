@@ -17,7 +17,7 @@ const { ImClient } = require('./client-core');
 const [,, token = 'test-token-123', deviceId = 'D-1', deviceType = 'desktop'] = process.argv;
 
 const client = new ImClient({
-  host: '127.0.0.1',
+  host: process.env.IM_CONNECT_HOST || '127.0.0.1',
   port: 19001,
   token,
   deviceId,

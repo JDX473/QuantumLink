@@ -16,7 +16,7 @@ const { newUser } = require('./test-lib');
   const acked = [];
 
   const client = new ImClient({
-    host: '127.0.0.1', port: 19001,
+    host: process.env.IM_CONNECT_HOST || '127.0.0.1', port: 19001,
     token: a.token, deviceId: a.deviceId, deviceType: 'desktop',
     handlers: {
       onConnected: () => {

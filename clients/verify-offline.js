@@ -23,14 +23,14 @@ const { newUser } = require('./test-lib');
 
   // A:发送方
   const clientA = new ImClient({
-    host: '127.0.0.1', port: 19001,
+    host: process.env.IM_CONNECT_HOST || '127.0.0.1', port: 19001,
     token: a.token, deviceId: a.deviceId, deviceType: 'desktop',
     handlers: {
       onConnected: () => {
         log('A 已连接');
         // B 也连上
         B = new ImClient({
-          host: '127.0.0.1', port: 19001,
+          host: process.env.IM_CONNECT_HOST || '127.0.0.1', port: 19001,
           token: b.token, deviceId: b.deviceId, deviceType: 'desktop',
           handlers: {
             onConnected: () => {
@@ -78,7 +78,7 @@ const { newUser } = require('./test-lib');
     if (reconnected) return;
     reconnected = true;
     const newB = new ImClient({
-      host: '127.0.0.1', port: 19001,
+      host: process.env.IM_CONNECT_HOST || '127.0.0.1', port: 19001,
       token: b.token, deviceId: b.deviceId, deviceType: 'desktop',
       handlers: {
         onConnected: () => {

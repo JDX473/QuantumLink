@@ -11,7 +11,7 @@ const { ImClient } = require('./client-core');
 const { API, newUser, sleep } = require('./test-lib');
 
 function connect(port, u, handlers) {
-  const c = new ImClient({ host: '127.0.0.1', port, token: u.token, deviceId: u.deviceId, deviceType: 'desktop', handlers });
+  const c = new ImClient({ host: process.env.IM_CONNECT_HOST || '127.0.0.1', port, token: u.token, deviceId: u.deviceId, deviceType: 'desktop', handlers });
   c.connect();
   return c;
 }

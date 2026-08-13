@@ -10,6 +10,10 @@
  */
 const { ImClient } = require('./client-core');
 const API = process.env.IM_API || 'http://127.0.0.1:8081';
+// 连接目标 host(默认本机;跨机器验证时 IM_CONNECT_HOST=服务器IP)
+const HOST = process.env.IM_CONNECT_HOST || '127.0.0.1';
+// 调度返回的 address 是"注册 IP:端口"(注册 IP 可配置,可能是服务器对外 IP),最少连接断言只比端口
+const portOf = (a) => a.substring(a.lastIndexOf(':') + 1);
 
 async function registerOrLogin(username, password) {
   let r = await fetch(API + '/api/auth/login', {
@@ -60,26 +64,26 @@ async function main() {
 
   // 1. 3 个用户连 19001,19002 空着
   console.log('[1] 3 个用户连 19001...');
-  for (let i = 0; i < 3; i++) await connectTo('127.0.0.1', 19001, users[i]);
+  for (let i = 0; i < 3; i++) await connectTo(HOST, 19001, users[i]);
   await sleep(3000); // 等连接数上报(1s 心跳)
 
   let d = await dispatch();
   console.log(`[1] 调度结果: address=${d.address} connections=${d.connections}`);
-  if (d.address !== '127.0.0.1:19002') {
-    console.error(`FAIL: 19001 挂 3 条,期望调度到 19002,实际 ${d.address}`);
+  if (portOf(d.address) !== '19002' || d.nodeId !== d.address) {
+    console.error(`FAIL: 19001 挂 3 条,期望调度到 *:19002 且 nodeId=address,实际 ${d.address} nodeId=${d.nodeId}`);
     process.exit(1);
   }
   console.log('  ✓ 最少连接选到 19002(连接数 0 < 3)');
 
   // 2. 4 个用户连 19002 → 19002=4 > 19001=3,应切回 19001
   console.log('[2] 4 个用户连 19002...');
-  for (let i = 3; i < 7; i++) await connectTo('127.0.0.1', 19002, users[i]);
+  for (let i = 3; i < 7; i++) await connectTo(HOST, 19002, users[i]);
   await sleep(3000);
 
   d = await dispatch();
   console.log(`[2] 调度结果: address=${d.address} connections=${d.connections}`);
-  if (d.address !== '127.0.0.1:19001') {
-    console.error(`FAIL: 19001=3 < 19002=4,期望调度到 19001,实际 ${d.address}`);
+  if (portOf(d.address) !== '19001' || d.nodeId !== d.address) {
+    console.error(`FAIL: 19001=3 < 19002=4,期望调度到 *:19001 且 nodeId=address,实际 ${d.address} nodeId=${d.nodeId}`);
     process.exit(1);
   }
   console.log('  ✓ 最少连接切回 19001(3 < 4)');
