@@ -19,7 +19,7 @@ async function login(u, p) {
   console.log('A=' + a.userId + ' B=' + b.userId);
 
   const acks = [];
-  const ca = new ImClient({ host:'127.0.0.1', port:19001, token:a.token, deviceId:a.deviceId, deviceType:'desktop', quiet:true,
+  const ca = new ImClient({ host: process.env.IM_CONNECT_HOST || '127.0.0.1', port:19001, token:a.token, deviceId:a.deviceId, deviceType:'desktop', quiet:true,
     handlers: {
       onConnected: () => console.log('[A] 已连 19001'),
       onAck: (ack) => {
@@ -39,7 +39,7 @@ async function login(u, p) {
       },
     },
   });
-  const cb = new ImClient({ host:'127.0.0.1', port:19002, token:b.token, deviceId:b.deviceId, deviceType:'desktop', quiet:true,
+  const cb = new ImClient({ host: process.env.IM_CONNECT_HOST || '127.0.0.1', port:19002, token:b.token, deviceId:b.deviceId, deviceType:'desktop', quiet:true,
     handlers: { onConnected: () => {}, onMessage: () => {} } });
   ca.connect();
   await sleep(800);
