@@ -18,8 +18,8 @@ const path = require('path');
 const { ImClient } = require('../client-core.js');
 
 // 业务层 API 地址(可用 IM_API / IM_CONNECT_HOST / IM_CONNECT_PORT 覆盖,云部署用)
-const API = process.env.IM_API || API;
-const CONNECT_HOST = process.env.IM_CONNECT_HOST || '127.0.0.1';
+const API = process.env.IM_API || 'http://8.141.86.246:8081';
+const CONNECT_HOST = process.env.IM_CONNECT_HOST || '8.141.86.246';
 const CONNECT_PORT = process.env.IM_CONNECT_PORT || '19001';
 
 let mainWindow = null;
