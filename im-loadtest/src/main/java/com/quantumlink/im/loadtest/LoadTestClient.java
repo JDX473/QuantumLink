@@ -136,9 +136,16 @@ public class LoadTestClient {
         for (TestClient tc : clients) tc.startSending();
 
         long t1 = System.currentTimeMillis();
+        long lastReport = -1;
         while (System.currentTimeMillis() - t1 < durationSec * 1000L) {
             Thread.sleep(1000);
+            long elapsed = (System.currentTimeMillis() - t1) / 1000;
+            if (elapsed - lastReport >= 5) {   // 每 5s 输出实时进度(PROGRESS 行,压测控制台解析)
+                lastReport = elapsed;
+                reportProgress((int) elapsed);
+            }
         }
+        reportProgress((int) durationSec);     // 结束前补最后一次
 
         // 4. 关闭 + 汇总
         for (TestClient tc : clients) tc.close();
@@ -343,6 +350,14 @@ public class LoadTestClient {
     }
 
     // ==================== 工具 ====================
+
+    /** 每 5s 实时进度:PROGRESS|elapsed|sent|acked|latencyP50|latencyP90|latencyP99(压测控制台解析,不受 quiet 控制) */
+    static void reportProgress(int elapsedSec) {
+        long[] lat = latenciesMs.stream().mapToLong(Long::longValue).toArray();
+        Arrays.sort(lat);
+        System.out.printf("PROGRESS|%d|%d|%d|%.0f|%.0f|%.0f%n",
+                elapsedSec, sent.sum(), acked.sum(), pct(lat, 50), pct(lat, 90), pct(lat, 99));
+    }
 
     static double pct(long[] sorted, int p) {
         if (sorted.length == 0) return 0;
