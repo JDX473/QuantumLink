@@ -297,7 +297,8 @@ class ImClient {
   async _pullConversation(conversationId, afterSeq) {
     try {
       const url = `${this.apiBase}/api/conversations/${encodeURIComponent(conversationId)}/messages?afterSeq=${afterSeq}&limit=50`;
-      const res = await fetch(url);
+      // 拉历史接口需鉴权(与桌面端 main.js 的 authFetch 一致);不加会被 401 拒绝
+      const res = await fetch(url, { headers: { Authorization: 'Bearer ' + this.token } });
       if (!res.ok) {
         console.error(`[client] 拉取失败: HTTP ${res.status}`);
         return;

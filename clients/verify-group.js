@@ -1,31 +1,26 @@
 /**
  * 群聊端到端验证:
- * 1. jds(19001) + jdx(19002) + alice(19002) 在线,三人建群
+ * 1. 三人在线,跨节点(jds→19001, jdx→19002, alice→19002)
  * 2. jds 发群消息 → jdx/alice 实时收到(targets 聚合 + tag 精准投递)
- * 3. alice 发群消息 → 验证群 seq 递增
- * 4. 下线 alice → jds 再发 → alice 上线拉取(离线补拉)
+ * 3. 群 seq 递增无重复
+ * 4. 群消息落库 + 拉取接口(读扩散)
+ *
+ * 用法: node verify-group.js
  */
 const { ImClient } = require('./client-core');
-const API = process.env.IM_API || 'http://127.0.0.1:8081';
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-async function login(u, p) {
-  let r = await fetch(API + '/api/auth/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({username:u,password:p,deviceType:'desktop'}) });
-  let d = await r.json();
-  if (!d.success) { await fetch(API + '/api/auth/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username:u,password:p}) }); d = await (await fetch(API + '/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username:u,password:p,deviceType:'desktop'}) })).json(); }
-  return d;
-}
+const { API, newUser, sleep } = require('./test-lib');
 
 function connect(port, u, handlers) {
-  const c = new ImClient({ host:'127.0.0.1', port, token:u.token, deviceId:u.deviceId, deviceType:'desktop', handlers });
+  const c = new ImClient({ host: '127.0.0.1', port, token: u.token, deviceId: u.deviceId, deviceType: 'desktop', handlers });
   c.connect();
   return c;
 }
 
 async function main() {
-  const jds = await login('jds', '123456');
-  const jdx = await login('jdx', '123456');
-  const alice = await login('alice', 'pass123');
+  // 随机用户名(避开种子用户;同秒多用户由 test-lib 自增后缀保证不冲突)
+  const jds = await newUser('grpJds');
+  const jdx = await newUser('grpJdx');
+  const alice = await newUser('grpAlice');
   console.log(`jds=${jds.userId} jdx=${jdx.userId} alice=${alice.userId}`);
 
   // 1. 三人在线,跨节点(jds→19001, jdx→19002, alice→19002)
@@ -68,7 +63,7 @@ async function main() {
   const asc = seqs.every((s, i) => i === 0 || s > seqs[i-1]);
   console.log(`群 seq 无重复: ${unique ? '✅' : '❌'}, 递增: ${asc ? '✅' : '❌'}`);
 
-  // 5. 群消息落库 + 离线拉取:jds 再发一条,然后查拉取接口
+  // 5. 群消息落库 + 拉取接口:jds 再发一条,然后查拉取接口
   ca.sendMessage({ receiverId: gid, conversationId: gid, msgType:'TEXT', content: '离线补拉测试', clientTime: Date.now() });
   await sleep(2500);
   const pulled = await (await fetch(`${API}/api/groups/${gid}/messages?afterSeq=0`, { headers: { Authorization: 'Bearer ' + jds.token } })).json();
