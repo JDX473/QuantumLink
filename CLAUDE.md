@@ -78,9 +78,11 @@ mvn test
 
 # 压测数据清理(MySQL + Redis 配套清,可选重置 MQ 位点/删压测用户;详见脚本头部)
 scripts/reset-data.sh                # 清消息链路(消息表 TRUNCATE + seq/已读计数器)
-scripts/reset-data.sh --users        # 同时删压测用户(lt_r% 前缀)
-scripts/reset-data.sh --reset-mq -y  # 重置 MQ 消费位点(丢弃积压)+ 跳过确认
-# 坑:MySQL 与 Redis 必须配套清(只清一边 → seq 与已读水位错位);清库后消息 seq 从 1 发号
+scripts/reset-data.sh --users        # 同时删压测用户(lt% 前缀:Node 客户端 lt_r% / Netty 客户端 lt{idx}_{ts})
+scripts/reset-data.sh --reset-mq -y  # 重置 MQ 消费位点(丢弃积压)+ 重启 chat + 跳过确认
+# 坑:① MySQL 与 Redis 必须配套清(只清一边 → seq 与已读水位错位);清库后消息 seq 从 1 发号
+# 坑:② --reset-mq 必须重启 chat——mqadmin resetOffsetByTime 只改 broker 端位点,
+#     chat 本地已拉取的积压缓冲不受影响,旧消息仍会消费写回(实测 TRUNCATE 后写回近 1 万条)
 
 # Linux/云部署(Windows 用 start-all.cmd;Linux 用 shell 脚本,环境变量 IM_* 覆盖)
 # 完整步骤见 docs/云部署.md:一键装中间件 → 配置 → 启动

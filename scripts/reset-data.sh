@@ -8,27 +8,38 @@
 #
 # 用法:
 #   scripts/reset-data.sh                  # 清消息链路(MySQL 消息/群/已读/会话表 + Redis seq/已读/在线 key)
-#   scripts/reset-data.sh --users          # 同时删压测用户(lt_r% 前缀,loadtest-clean.js 生成)
+#   scripts/reset-data.sh --users          # 同时删压测用户(lt% 前缀:Node 客户端 lt_r%,Netty 客户端 lt{idx}_{ts})
 #   scripts/reset-data.sh --users mypref   # 删指定前缀用户
-#   scripts/reset-data.sh --reset-mq       # 重置 RocketMQ 消费位点到最新(丢弃积压,防 TRUNCATE 后被积压消息写回)
+#   scripts/reset-data.sh --reset-mq       # 重置消费位点到最新 + 重启 chat(见下方"为什么还要重启 chat")
 #   scripts/reset-data.sh -y               # 跳过确认
+#
+# 为什么 --reset-mq 还要重启 chat:
+#   mqadmin resetOffsetByTime 只改 broker 端消费位点,chat 消费者本地已拉取的
+#   积压缓冲不受影响——位点重置后这些旧消息仍会被消费,把 TRUNCATE 后的表写回
+#   (实测写回近 1 万条)。重启 chat = 本地缓冲清零,按新位点重新拉取,积压被跳过。
+#   顺序:reset 位点 → kill chat → 重启,端口就绪后脚本返回。
 #
 # 环境变量(不设用默认,对齐 start-all.sh):
 #   IM_MYSQL_HOST/PORT/DB/USER/PASSWORD   IM_REDIS_HOST/PORT/PASSWORD
 #   IM_ROCKETMQ_NAMESRV   ROCKETMQ_HOME(找 mqadmin,默认 /opt/rocketmq-all-5.3.1-bin-release)
+#   IM_CHAT_PORTS(重启 chat 的端口列表,默认 "8081 8082",对齐 start-all.sh)
 set -u
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
 
 MYSQL_ARGS="-h${IM_MYSQL_HOST:-127.0.0.1} -P${IM_MYSQL_PORT:-3306} -u${IM_MYSQL_USER:-root} -p${IM_MYSQL_PASSWORD:-123456} ${IM_MYSQL_DB:-quantumlink}"
 REDIS_PASS="${IM_REDIS_PASSWORD:-}"
 redis_cli() { redis-cli -h "${IM_REDIS_HOST:-127.0.0.1}" -p "${IM_REDIS_PORT:-6379}" ${REDIS_PASS:+-a "$REDIS_PASS"} --no-auth-warning "$@"; }
 
 DO_USERS=0
-USER_PREFIX="lt_r%"
+# 默认 lt%:覆盖两种压测客户端命名——Node 客户端 lt_r{ts}_p{pid}_u{i}(loadtest-clean.js)、
+# Netty 客户端 lt{idx}_{ts}(LoadTestClient)。lt 前缀 = 压测专用,正式用户不用。
+USER_PREFIX="lt%"
 DO_RESET_MQ=0
 YES=0
 for a in "$@"; do
   case "$a" in
-    --users)   DO_USERS=1; USER_PREFIX="lt_r%";;
+    --users)   DO_USERS=1; USER_PREFIX="lt%";;
     --users=*) DO_USERS=1; USER_PREFIX="${a#--users=}";;
     --reset-mq) DO_RESET_MQ=1;;
     -y) YES=1;;
@@ -42,23 +53,47 @@ echo "[MySQL] TRUNCATE: im_message / im_group_message / im_group / im_group_memb
 if [ "$DO_USERS" = 1 ]; then echo "[MySQL] 删压测用户: username LIKE '${USER_PREFIX}'(含关联 im_device/im_group_member)"; fi
 echo "[Redis] 删 key 模式: im:conv:seq:* im:group_seq:* im:read:* im:group_read:* im:group_msg_read:* im:f2f:* im:session:* im:devices:* im:node:conns:*"
 echo "[Redis] 保留: im:token:*(在线登录态,TTL 自愈) im:user:*(用户缓存,TTL 10min 自愈)"
-if [ "$DO_RESET_MQ" = 1 ]; then echo "[MQ] 重置消费位点到最新: im-chat-consumer(client2server) / im-chat-deliver-consumer / im-chat-read-consumer(client2signal)"; fi
+if [ "$DO_RESET_MQ" = 1 ]; then echo "[MQ] 重置消费位点到最新: im-chat-consumer(client2server) / im-chat-deliver-consumer / im-chat-read-consumer(client2signal)"; echo "[MQ] 重启 chat: 清空消费者本地积压缓冲(仅重置位点,旧消息仍会被写回)"; fi
 if [ "$YES" != 1 ]; then
   read -r -p "确认执行? [y/N] " ans
   [ "$ans" = "y" ] || [ "$ans" = "Y" ] || { echo "已取消"; exit 0; }
 fi
 
-# ---- 2. (可选)重置 MQ 位点:必须先于 TRUNCATE——否则 chat 还在消费的积压消息会立即把 TRUNCATE 后的表写回 ----
+# ---- 2. (可选)重置 MQ 位点 + 重启 chat ----
+# resetOffsetByTime 只改 broker 端位点,chat 本地已拉取的积压缓冲还会消费写回
+# (实测 TRUNCATE 后写回近 1 万条)——必须重启 chat 清空缓冲,按新位点重新拉取。
 if [ "$DO_RESET_MQ" = 1 ]; then
   ROCKETMQ_HOME="${ROCKETMQ_HOME:-/opt/rocketmq-all-5.3.1-bin-release}"
   MQADMIN="$ROCKETMQ_HOME/bin/mqadmin"
   NAMESRV="${IM_ROCKETMQ_NAMESRV:-127.0.0.1:9876}"
+  CHAT_PORTS="${IM_CHAT_PORTS:-8081 8082}"
+  CHAT_JAR="$ROOT/im-chat/target/im-chat-1.0.0-SNAPSHOT.jar"
   [ -f "$MQADMIN" ] || { echo "[!!] 找不到 mqadmin: $MQADMIN(设 ROCKETMQ_HOME)"; exit 1; }
+  [ -f "$CHAT_JAR" ] || { echo "[!!] 找不到 chat jar: $CHAT_JAR"; exit 1; }
   TS=$(date +%s%3N)
   echo "--- 重置消费位点(namesrv=$NAMESRV) ---"
   "$MQADMIN" resetOffsetByTime -n "$NAMESRV" -g im-chat-consumer        -t client2server -s "$TS" 2>&1 | tail -2
   "$MQADMIN" resetOffsetByTime -n "$NAMESRV" -g im-chat-deliver-consumer -t client2signal -s "$TS" 2>&1 | tail -2
   "$MQADMIN" resetOffsetByTime -n "$NAMESRV" -g im-chat-read-consumer    -t client2signal -s "$TS" 2>&1 | tail -2
+
+  echo "--- 重启 chat(清空消费者本地积压缓冲)$CHAT_PORTS ---"
+  for p in $CHAT_PORTS; do
+    pids=$(ps -eo pid,args | grep "[i]m-chat-.*\.jar.*--server.port=$p" | awk '{print $1}')
+    [ -n "$pids" ] && kill $pids && echo "  [stop] im-chat :$p (pid=$pids)"
+  done
+  sleep 2
+  for p in $CHAT_PORTS; do
+    echo "  [start] im-chat :$p"
+    nohup "$(command -v java)" -Xmx1g -jar "$CHAT_JAR" --server.port="$p" >> "$ROOT/logs/im-chat-$p.log" 2>&1 &
+  done
+  # 等端口就绪(Spring Boot 启动 ~15-25s;RocketMQ 消费 rebalance 另需几秒)
+  for p in $CHAT_PORTS; do
+    for i in $(seq 1 30); do
+      if (echo > "/dev/tcp/127.0.0.1/$p") 2>/dev/null; then echo "  [ready] im-chat :$p"; break; fi
+      sleep 1
+    done
+  done
+  echo "  (chat 已重启,消费者按新位点拉取;若端口未就绪请查 logs/im-chat-*.log)"
 fi
 
 # ---- 3. MySQL:TRUNCATE 消息链路表 ----
