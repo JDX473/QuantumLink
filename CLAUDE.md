@@ -114,4 +114,5 @@ scripts/stop-all.sh         # 停止 chat + connect
 - `docs/MQ与RPC选型.md` — 为什么用 MQ 不用 RPC(上行有序 + 下行发布订阅)
 - `docs/与生产IM对比.md` — 与真实 IM 的对比(核心同构 + 规模工程差距)
 - `docs/压测报告1.md` / `docs/压测报告2.md` — 压测报告(v1 已被 v2 否定,引用以 v2 为准)
+- `docs/云部署.md` — 云部署指南(中间件 Docker Compose + brokerIP1/Nacos 端口坑 + IM_* 环境变量 + start-all.sh,照着顺序执行即可部署)
 - `README.md` — 架构总览 + 模块 + 启动步骤 + 设计决策 + 项目进展

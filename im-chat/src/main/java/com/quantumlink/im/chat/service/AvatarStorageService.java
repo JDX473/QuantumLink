@@ -53,7 +53,8 @@ public class AvatarStorageService {
                 log.info("MinIO bucket created: {}", bucket);
             }
         } catch (Exception e) {
-            throw new IllegalStateException("MinIO bucket init failed", e);
+            // 可降级:MinIO 不可用时仅告警、不阻断启动;头像上传时才真正报错
+            log.warn("MinIO bucket init failed, 头像功能将不可用(服务继续启动): {}", e.getMessage());
         }
     }
 
