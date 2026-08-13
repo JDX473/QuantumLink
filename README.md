@@ -132,6 +132,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - **2026-08-13(connect 注册 IP 可配置:跨机器客户端直连)**:云上部署后 connect 节点把 `127.0.0.1` 注册进 Nacos/调度接口,客户端换机器(压测/桌面端在另一台电脑)连不上。**修复**:ConnectConfig 新增 `host` 字段(`im.connect.host` / `IM_CONNECT_HOST`,start-all.sh 透传,默认 127.0.0.1),`nodeId() = config.host:port`——nodeId 是"三处一致"单一锚点(Nacos 注册/会话表值/MQ tag 同源派生),host 一变全局自动跟随。云部署文档将 `IM_CONNECT_HOST=公网IP` 列为**必改**(曾尝试"自动探测本机 IP",但云服务器探测到的是内网 IP,公网客户端依旧连不上——云部署必须显式给公网地址)。**客户端侧全参数化**:verify 脚本 TCP 连接目标统一走 `IM_CONNECT_HOST` 环境变量、HTTP 走 `IM_API`、桌面端 main.js 同支持(默认 API 指向公网 `8.141.86.246:8081`);verify-lb 断言从"完整地址相等"改为"端口相等"(注册 IP 可配置后地址不再固定);verify-async-auth 的 host 参数化。**修复脚本 bug**:start-all.sh `set -u` 下 `IM_NACOS_ADDR` 未设置时报 unbound(先给默认值再裁剪)。**验证**:单测 139 全过、clients/ 14 + scripts/ 7 全量回归通过、Nacos 注册 `8.141.86.246:19001/19002`(healthy)、调度接口返回同地址、跨节点端到端互通、本机 127.0.0.1 默认行为不破坏。
 - **2026-08-13(压测数据清理脚本 reset-data.sh)**:压测前的数据重置工具。**设计取舍**:做成**本机 shell 脚本而非 HTTP 接口**——清库接口暴露在公网 = 灾难级风险(任何人可清库),压测清理是运维动作,本机执行零暴露、不污染业务代码。**MySQL + Redis 必须配套清**(CLAUDE.md 教训:只清一边 → seq 与已读水位错位):TRUNCATE 消息/群/已读/会话表 + 按模式删 `im:conv:seq:*`/`im:group_seq:*`/已读/在线 key,保留 `im:token:*`(在线登录态 TTL 自愈,清库不影响已登录客户端)。**RocketMQ 积压不删数据**:用 `mqadmin resetOffsetByTime` 重置消费位点到最新(丢弃积压,必须**先于 TRUNCATE**,否则 chat 还在消费的积压消息会立即把清空的表写回)。**可选项**:`--users`(删压测用户 **lt% 前缀**——同时覆盖 Node 客户端 `lt_r%` 和 Netty 客户端 `lt{idx}_{ts}` 两种命名,连带 im_device/im_group_member)、`-y` 跳过确认。**替换旧脚本**:原 clients/loadtest/loadtest-cleanup.js 是 Windows 专用(硬编码 F:/Study/Redis4)且清 Redis 用 `keys im:*` 全删(会误删在线 token),已废弃。**验证**:默认/--users/--reset-mq 三分支全通;清理后 verify-chat 通过、消息 seq 从 1 重新发号(证明配套清生效)。
 - **2026-08-13(reset-data.sh 压测实测发现两个缺陷并修复)**:① **--users 前缀匹配错**:默认 `lt_r%` 只匹配旧 Node 客户端,Netty 压测客户端命名是 `lt{idx}_{ts}`(如 lt0_505400),导致 101 个压测用户残留删不掉——统一默认 `lt%`。② **--reset-mq 只重置 broker 端位点,chat 本地积压缓冲写回**:`mqadmin resetOffsetByTime` 改的是 broker 端消费进度,chat 消费者早已拉取的积压消息不受影响——TRUNCATE 后旧消息继续被消费,**实测写回 9923 条**(还拖累冒烟测试:积压挤占 Orderly 消费,ACK 延迟 2.2s、送达率 39%)。**修复**:--reset-mq 分支在重置位点后**自动重启 chat**(kill + nohup,等端口就绪)——消费者本地缓冲清零,按新位点重新拉取,积压被跳过。修复后实测:清理干净(消息 0、压测用户 0)+ 冒烟测试送达率 100%、P50=17ms。
+- **2026-08-13(云服务器本机阶梯压测,报告3)**:腾讯云 8C16G 本机直连 4 轮阶梯压测(Netty 压测客户端):100×3 → 298/s 送达 100% P50 74ms;100×5 → 496/s 99.9% P50 70ms;150×4 → 595/s 99.6% P50 100ms;200×4 → 792/s 99.4% P50 195ms(P90 1.3s 饱和边缘)。**健康水位 ≈600 条/秒(P50<100ms),极限 ≈800 条/秒,13 万+ 条 0 丢失**——预测(600-750 健康)与实际吻合,极限略低(8 核被中间件同机共享)。**公网带宽教训**:同负载公网客户端实测 66.7%/P50 5.4s(带宽打满→TCP 拥塞),本机 100%/86ms——吞吐压测必须本机跑,公网压测测的是链路可用性。报告见 docs/压测报告3.md。
 
 ## 分支
 
@@ -158,6 +159,7 @@ curl -X POST http://127.0.0.1:8081/api/auth/login \
 - [docs/慢客户端处理方案.md](docs/慢客户端处理方案.md) — **慢客户端处理方案:有界 + 降维**(Netty 水位/停读 / per-channel 有界队列 / MQ 位点必须提交 / 不可达→主动断连→增量拉取补偿 / 降维成"暂时离线" + 面试口述)
 - [docs/压测报告1.md](docs/压测报告1.md) — 压测报告 v1(首次压测发现的问题;**数据受 console.log/发送速率等假瓶颈污染,已被报告 2 否定,引用以报告 2 为准**)
 - [docs/压测报告2.md](docs/压测报告2.md) — 压测报告 v2(修复后:消息 100% 落库 0 丢失,30 连接 P50 79-108ms)
+- [docs/压测报告3.md](docs/压测报告3.md) — 压测报告 v3(云服务器 8C16G Linux 双实例:健康 600 条/秒 P50<100ms,极限 800 条/秒 0 丢消息;公网带宽是压测天花板)
 
 ## 提交规矩
 
