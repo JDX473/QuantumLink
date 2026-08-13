@@ -8,7 +8,7 @@
  */
 const { ImClient } = require('./client-core');
 
-const API = 'http://127.0.0.1:8081';
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
 
 async function api(path, body) {
   const res = await fetch(API + path, {

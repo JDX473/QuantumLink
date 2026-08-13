@@ -17,6 +17,11 @@ const path = require('path');
 // 复用自定义 TCP 客户端核心(握手/心跳/重连/重传/增量拉取)
 const { ImClient } = require('../client-core.js');
 
+// 业务层 API 地址(可用 IM_API / IM_CONNECT_HOST / IM_CONNECT_PORT 覆盖,云部署用)
+const API = process.env.IM_API || API;
+const CONNECT_HOST = process.env.IM_CONNECT_HOST || '127.0.0.1';
+const CONNECT_PORT = process.env.IM_CONNECT_PORT || '19001';
+
 let mainWindow = null;
 let client = null;
 let authToken = null; // 登录后保存,HTTP 接口鉴权用
@@ -56,7 +61,7 @@ function createWindow() {
 
 /** 登录:调业务层 HTTP 拿 token/deviceId,再建立长连接(deviceId 客户端持久,重装/重登不变) */
 ipcMain.handle('auth:login', async (_e, { username, password, deviceType, deviceId }) => {
-  const res = await fetch('http://127.0.0.1:8081/api/auth/login', {
+  const res = await fetch(API + '/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password, deviceType: deviceType || 'desktop', deviceId }),
@@ -69,7 +74,7 @@ ipcMain.handle('auth:login', async (_e, { username, password, deviceType, device
 
 /** 注册 */
 ipcMain.handle('auth:register', async (_e, { username, password }) => {
-  const res = await fetch('http://127.0.0.1:8081/api/auth/register', {
+  const res = await fetch(API + '/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
@@ -89,7 +94,7 @@ ipcMain.handle('auth:register-with-avatar', async (_e, { username, password, fil
   const blob = new Blob([buf], { type: mimeType || 'image/png' });
   fd.append('file', blob, fileName || 'avatar.png');
 
-  const res = await fetch('http://127.0.0.1:8081/api/auth/register/avatar', {
+  const res = await fetch(API + '/api/auth/register/avatar', {
     method: 'POST',
     body: fd,
   });
@@ -100,7 +105,7 @@ ipcMain.handle('auth:register-with-avatar', async (_e, { username, password, fil
 
 /** 用户名 → userId 解析(聊天时填用户名,解析成 userId 再发) */
 ipcMain.handle('users:resolve', async (_e, { username }) => {
-  const res = await authFetch(`http://127.0.0.1:8081/api/users/resolve?username=${encodeURIComponent(username)}`);
+  const res = await authFetch(`${API}/api/users/resolve?username=${encodeURIComponent(username)}`);
   const data = await res.json();
   if (!data.success) throw new Error(data.message || 'resolve failed');
   return data;
@@ -113,7 +118,7 @@ ipcMain.handle('users:update-avatar', async (_e, { userId, fileData, fileName, m
   const blob = new Blob([buf], { type: mimeType || 'image/png' });
   fd.append('file', blob, fileName || 'avatar.png');
 
-  const res = await authFetch(`http://127.0.0.1:8081/api/users/${encodeURIComponent(userId)}/avatar`, {
+  const res = await authFetch(`${API}/api/users/${encodeURIComponent(userId)}/avatar`, {
     method: 'POST',
     body: fd,
   });
@@ -124,14 +129,14 @@ ipcMain.handle('users:update-avatar', async (_e, { userId, fileData, fileName, m
 
 /** 会话列表 */
 ipcMain.handle('convs:list', async (_e, { userId }) => {
-  const res = await authFetch(`http://127.0.0.1:8081/api/conversations?userId=${encodeURIComponent(userId)}`);
+  const res = await authFetch(`${API}/api/conversations?userId=${encodeURIComponent(userId)}`);
   const data = await res.json();
   return data;
 });
 
 /** 拉取某会话 afterSeq 之后的消息 */
 ipcMain.handle('convs:pull', async (_e, { conversationId, afterSeq, limit }) => {
-  const res = await authFetch(`http://127.0.0.1:8081/api/conversations/${encodeURIComponent(conversationId)}/messages?afterSeq=${afterSeq}&limit=${limit || 50}`);
+  const res = await authFetch(`${API}/api/conversations/${encodeURIComponent(conversationId)}/messages?afterSeq=${afterSeq}&limit=${limit || 50}`);
   const data = await res.json();
   return data;
 });
@@ -141,9 +146,9 @@ ipcMain.handle('connect:start', async (_e, { token, deviceId }) => {
   if (client) { client.close(); client = null; }
 
   // 调度接口已由服务端算好最少连接节点,客户端无需感知节点列表
-  const dispatchRes = await authFetch('http://127.0.0.1:8081/api/connects');
+  const dispatchRes = await authFetch(API + '/api/connects');
   const dispatch = await dispatchRes.json();
-  const nodeAddr = dispatch.success ? dispatch.address : '127.0.0.1:19001'; // 兜底
+  const nodeAddr = dispatch.success ? dispatch.address : CONNECT_HOST + ':' + CONNECT_PORT; // 兜底
   const [host, port] = nodeAddr.split(':');
   console.log('[dispatch] 服务端决策节点:', nodeAddr);
 
@@ -153,7 +158,7 @@ ipcMain.handle('connect:start', async (_e, { token, deviceId }) => {
     token,
     deviceId,
     deviceType: 'desktop',
-    apiBase: 'http://127.0.0.1:8081',
+    apiBase: API,
     handlers: {
       onConnected: (userId) => sendToRenderer('conn:status', { status: 'connected', userId }),
       onMessage: (msg) => sendToRenderer('msg:received', msg),
@@ -189,7 +194,7 @@ ipcMain.handle('chat:reportRead', async (_e, { conversationId, untilSeq }) => {
 
 /** 创建群(ownerId 服务端从鉴权上下文取,不信任客户端) */
 ipcMain.handle('groups:create', async (_e, { name, members }) => {
-  const res = await authFetch('http://127.0.0.1:8081/api/groups', {
+  const res = await authFetch(API + '/api/groups', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, members }),
@@ -199,7 +204,7 @@ ipcMain.handle('groups:create', async (_e, { name, members }) => {
 
 /** 面对面建群:输入 4 位数字,加入/创建该数字窗口的群 */
 ipcMain.handle('groups:face2face', async (_e, { code }) => {
-  const res = await authFetch('http://127.0.0.1:8081/api/groups/face2face', {
+  const res = await authFetch(API + '/api/groups/face2face', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code }),
@@ -209,13 +214,13 @@ ipcMain.handle('groups:face2face', async (_e, { code }) => {
 
 /** 我的群列表(服务端从鉴权上下文取 userId) */
 ipcMain.handle('groups:list', async () => {
-  const res = await authFetch('http://127.0.0.1:8081/api/groups');
+  const res = await authFetch(API + '/api/groups');
   return res.json();
 });
 
 /** 群消息增量拉取(按 seq;limit 控制每页,hasMore 支持翻页) */
 ipcMain.handle('groups:pull', async (_e, { groupId, afterSeq, limit }) => {
-  const res = await authFetch(`http://127.0.0.1:8081/api/groups/${encodeURIComponent(groupId)}/messages?afterSeq=${afterSeq}${limit ? '&limit=' + limit : ''}`);
+  const res = await authFetch(`${API}/api/groups/${encodeURIComponent(groupId)}/messages?afterSeq=${afterSeq}${limit ? '&limit=' + limit : ''}`);
   return res.json();
 });
 

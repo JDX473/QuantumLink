@@ -4,8 +4,8 @@
  * 3. 群成员 = A/B/C;A 发群消息,B/C 跨节点实时收到
  * 4. 重复输入 → 幂等
  */
-const { ImClient } = require('E:/QIUZHAO/IM/clients/client-core');
-const API = 'http://127.0.0.1:8081';
+const { ImClient } = require('./client-core');
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function login(u, p) {

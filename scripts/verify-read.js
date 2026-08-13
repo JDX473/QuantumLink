@@ -1,7 +1,7 @@
 // 单聊已读端到端验证:
 // A 发消息 → B 收到 → B 上报已读 → A 收到 READ 事件 → 校验 Redis 水位 + 拉历史 peerReadSeq
-const { ImClient } = require('E:/QIUZHAO/IM/clients/client-core.js');
-const API = 'http://127.0.0.1:8081';
+const { ImClient } = require('../clients/client-core.js');
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function post(path, body) {

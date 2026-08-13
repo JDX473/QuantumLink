@@ -11,7 +11,9 @@
  * 统计:吞吐(QPS)+ 端到端延迟(P50/P99)+ 送达率 + 真实链路负载(MSG+DELIVER_ACK)。
  */
 const { ImClient } = require('../client-core');
-const API = 'http://127.0.0.1:8081';
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
+const HOST = process.env.IM_CONNECT_HOST || '127.0.0.1';
+const PORTS = (process.env.IM_CONNECT_PORTS || '19001 19002').split(' ').map(Number);
 
 const PROCS = parseInt(process.argv[2] || '1');          // 进程数
 const CONNS = parseInt(process.argv[3] || '15');         // 每进程连接数
@@ -54,8 +56,8 @@ async function runWorker(pid) {
   const clients = [];
   const lat = [];
   for (let i = 0; i < CONNS; i++) {
-    const port = i % 2 === 0 ? 19001 : 19002;
-    const c = new ImClient({ host: '127.0.0.1', port, token: users[i].token, deviceId: users[i].deviceId,
+    const port = PORTS[i % PORTS.length];
+    const c = new ImClient({ host: HOST, port, token: users[i].token, deviceId: users[i].deviceId,
       deviceType: 'loadtest', quiet: true,
       handlers: {
         onConnected: () => {},

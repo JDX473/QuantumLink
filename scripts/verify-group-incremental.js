@@ -2,8 +2,8 @@
 // 1. 群 150 条消息,首次打开走尾部(最近 100 条)
 // 2. 翻页(hasMore)正确
 // 3. "查看更早的消息"逻辑:拉 minSeq 之前 100 条
-const { ImClient } = require('E:/QIUZHAO/IM/clients/client-core.js');
-const API = 'http://127.0.0.1:8081';
+const { ImClient } = require('../clients/client-core.js');
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function post(p, b, token) { const r = await fetch(API + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': 'Bearer ' + token } : {}) }, body: JSON.stringify(b) }); return r.json(); }
 async function get(p, t) { const r = await fetch(API + p, { headers: { 'Authorization': 'Bearer ' + t } }); return r.json(); }

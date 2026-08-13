@@ -1,6 +1,6 @@
 /** 双 chat 实例验证:同会话消息有序 + 雪花 id 唯一 */
-const { ImClient } = require('E:/QIUZHAO/IM/clients/client-core');
-const API = 'http://127.0.0.1:8081';
+const { ImClient } = require('./client-core');
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function login(u, p) {

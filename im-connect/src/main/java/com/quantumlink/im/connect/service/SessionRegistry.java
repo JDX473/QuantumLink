@@ -4,11 +4,12 @@ import com.quantumlink.im.connect.config.ConnectConfig;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
 import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.api.async.RedisAsyncCommands;
 import io.lettuce.core.api.sync.RedisCommands;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Redis 会话注册表。
@@ -34,16 +35,14 @@ public class SessionRegistry {
     private final RedisClient redisClient;
     private final StatefulRedisConnection<String, String> connection;
     private final RedisCommands<String, String> commands;
+    private final RedisAsyncCommands<String, String> asyncCommands;
 
     public SessionRegistry(ConnectConfig config) {
-        RedisURI uri = RedisURI.builder()
-                .withHost(config.redisHost)
-                .withPort(config.redisPort)
-                .withTimeout(Duration.ofSeconds(3))
-                .build();
+        RedisURI uri = config.redisUri();
         this.redisClient = RedisClient.create(uri);
         this.connection = redisClient.connect();
         this.commands = connection.sync();
+        this.asyncCommands = connection.async();
     }
 
     /** 会话 key */
@@ -98,6 +97,19 @@ public class SessionRegistry {
             return null;
         }
         return commands.get("im:token:" + token);
+    }
+
+    /**
+     * 异步握手鉴权:校验 token 返回 userId,<b>不阻塞调用线程</b>。
+     * Redis 往返在 Lettuce 的 IO 线程完成,回调由调用方决定在哪执行
+     * (HandshakeHandler 会回投到该连接的 EventLoop)。配合待鉴权帧队列,
+     * 让握手不再阻塞 EventLoop——Redis 抖动不会卡住同 EventLoop 上的所有连接。
+     */
+    public CompletableFuture<String> authenticateAsync(String token) {
+        if (token == null || token.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return asyncCommands.get("im:token:" + token).toCompletableFuture();
     }
 
     public void shutdown() {

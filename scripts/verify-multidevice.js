@@ -2,8 +2,8 @@
 // 1. 同一账号在两台设备(不同 deviceId)登录 → 设备列表显示两设备都在线
 // 2. 第三方发消息给该用户 → 两设备都实时收到(多端全推)
 // 3. 用同一持久 deviceId 重新登录 → 设备列表不增长(复用同一台设备)
-const { ImClient } = require('E:/QIUZHAO/IM/clients/client-core.js');
-const API = 'http://127.0.0.1:8081';
+const { ImClient } = require('../clients/client-core.js');
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function post(p, b, t) { const r = await fetch(API + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(t ? { 'Authorization': 'Bearer ' + t } : {}) }, body: JSON.stringify(b) }); return r.json(); }
 async function get(p, t) { const r = await fetch(API + p, { headers: { 'Authorization': 'Bearer ' + t } }); return r.json(); }

@@ -31,7 +31,7 @@ public class NacosDiscoveryService {
     /** connect 在 Nacos 中注册的服务名(与 connect NodeReporter 一致) */
     public static final String CONNECT_SERVICE = "im-connect";
 
-    @Value("${nacos.server-addr:127.0.0.1:8848}")
+    @Value("${nacos.server-addr:127.0.0.1:8850}")
     private String serverAddr;
 
     private NamingService namingService;

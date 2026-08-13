@@ -12,8 +12,6 @@ import io.netty.channel.ChannelFutureListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
-
 /**
  * 踢人订阅者:订阅 Redis {@code im:kick} 频道,收到踢人指令后关闭目标连接。
  *
@@ -44,11 +42,7 @@ public class KickSubscriber {
 
     public KickSubscriber(ConnectConfig config, SessionRegistry sessionRegistry) {
         this.sessionRegistry = sessionRegistry;
-        RedisURI uri = RedisURI.builder()
-                .withHost(config.redisHost)
-                .withPort(config.redisPort)
-                .withTimeout(Duration.ofSeconds(3))
-                .build();
+        RedisURI uri = config.redisUri();
         this.redisClient = RedisClient.create(uri);
         this.connection = redisClient.connectPubSub();
         this.connection.addListener(new RedisPubSubListener<String, String>() {

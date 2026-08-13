@@ -3,7 +3,7 @@
  * 用法: node loadtest-cleanup.js [round]
  *   round 不填 = 清理所有 lt_* 前缀用户的数据
  */
-const API = 'http://127.0.0.1:8081';
+const API = process.env.IM_API || 'http://127.0.0.1:8081';
 const { execSync } = require('child_process');
 
 const round = process.argv[2];
