@@ -34,11 +34,11 @@ async function main() {
   // 3. A 连 19001,B 连 19002(强制不同节点)
   let done = false;
   const ca = new ImClient({
-    host: '127.0.0.1', port: 19001, token: a2.token, deviceId: a2.deviceId, deviceType: 'desktop',
+    host: process.env.IM_CONNECT_HOST || '127.0.0.1', port: 19001, token: a2.token, deviceId: a2.deviceId, deviceType: 'desktop',
     handlers: { onConnected: (uid) => console.log('[A] 已连 19001, userId=', uid) },
   });
   const cb = new ImClient({
-    host: '127.0.0.1', port: 19002, token: b2.token, deviceId: b2.deviceId, deviceType: 'desktop',
+    host: process.env.IM_CONNECT_HOST || '127.0.0.1', port: 19002, token: b2.token, deviceId: b2.deviceId, deviceType: 'desktop',
     handlers: {
       onConnected: (uid) => {
         console.log('[B] 已连 19002, userId=', uid);

@@ -113,6 +113,8 @@ public class NettyConnectServer {
      * host 可配置(config.host):本地默认 127.0.0.1,云上需设为客户端能访问的
      * 公网/内网 IP(否则调度接口返回 127.0.0.1,远程客户端连不上)。
      * 多节点:启动时用 {@code -Dim.connect.port=19002} 指定不同端口 → 不同节点。
+     * 注:曾尝试"自动探测本机对外 IP",但云服务器探测到的是内网 IP(如 172.26.x.x),
+     * 公网客户端依旧连不上——云部署必须显式设公网 IP,不自动探测。
      */
     private String nodeId() {
         return config.host + ":" + config.port;

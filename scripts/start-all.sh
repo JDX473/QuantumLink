@@ -43,9 +43,9 @@ CONNECT_PORTS="${IM_CONNECT_PORTS:-19001 19002}"
 # bash 内置 TCP 探活(不需 nc)
 port_open() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && { exec 3>&- 3<&-; return 0; } || return 1; }
 
-# Nacos 检查端口从 IM_NACOS_ADDR(host:port) 取,默认 8850
-NACOS_PORT="${IM_NACOS_ADDR##*:}"
-[ -n "$NACOS_PORT" ] || NACOS_PORT=8850
+# Nacos 检查端口从 IM_NACOS_ADDR(host:port) 取,默认 8850(set -u 下必须先给默认值再裁剪)
+NACOS_ADDR="${IM_NACOS_ADDR:-127.0.0.1:8850}"
+NACOS_PORT="${NACOS_ADDR##*:}"
 
 echo "==================== QuantumLink start-all ===================="
 echo "  ROOT: $ROOT | JAVA: $JAVA | chat=$CHAT_PORTS connect=$CONNECT_PORTS"
