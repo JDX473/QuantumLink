@@ -110,10 +110,12 @@ public class NettyConnectServer {
      *
      * <p>用 {@code host:port} 作为节点唯一标识(不同端口天然不同节点)。
      * 它是 Redis 会话表的值、MQ tag 的来源、调度接口返回的地址,三处必须一致。
+     * host 可配置(config.host):本地默认 127.0.0.1,云上需设为客户端能访问的
+     * 公网/内网 IP(否则调度接口返回 127.0.0.1,远程客户端连不上)。
      * 多节点:启动时用 {@code -Dim.connect.port=19002} 指定不同端口 → 不同节点。
      */
     private String nodeId() {
-        return "127.0.0.1:" + config.port;
+        return config.host + ":" + config.port;
     }
 
     public void shutdown() {

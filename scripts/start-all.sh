@@ -8,6 +8,7 @@
 #   JAVA_HOME          JDK 17 路径(默认用 PATH 里的 java)
 #   IM_CHAT_PORTS      chat 端口列表,空格分隔(默认 "8081 8082" 双实例,分摊 CPU)
 #   IM_CONNECT_PORTS   connect 端口列表,空格分隔(默认 "19001 19002")
+#   IM_CONNECT_HOST    connect 对外地址(节点注册 Nacos / 调度返回给客户端;云上=公网 IP,默认 127.0.0.1)
 #   IM_MYSQL_HOST/PORT/DB/USER/PASSWORD   chat 用(application.yml 消费)
 #   IM_REDIS_HOST/PORT/PASSWORD           chat + connect 共用
 #   IM_ROCKETMQ_NAMESRV                   chat + connect 共用
@@ -82,6 +83,7 @@ for p in $CONNECT_PORTS; do
     echo "[start] im-connect :$p"
     nohup "$JAVA" -Xmx512m \
       -Dim.connect.port="$p" \
+      -Dim.connect.host="${IM_CONNECT_HOST:-127.0.0.1}" \
       -Dim.connect.redis.host="${IM_REDIS_HOST:-127.0.0.1}" \
       -Dim.connect.redis.port="${IM_REDIS_PORT:-6379}" \
       -Dim.connect.redis.password="${IM_REDIS_PASSWORD:-}" \

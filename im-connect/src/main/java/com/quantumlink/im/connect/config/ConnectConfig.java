@@ -11,6 +11,8 @@ import java.time.Duration;
 public class ConnectConfig {
     /** 监听端口 */
     public int port;
+    /** 对外地址:节点注册到 Nacos / 调度接口返回给客户端的 IP(云上=公网/内网 IP,本地=127.0.0.1) */
+    public String host = "127.0.0.1";
     /** boss 线程数 */
     public int bossThreads = 1;
     /** worker 线程数(默认 2×CPU) */
@@ -35,6 +37,7 @@ public class ConnectConfig {
     public static ConnectConfig fromEnv() {
         ConnectConfig c = new ConnectConfig();
         c.port = Integer.parseInt(propOrEnv("im.connect.port", "IM_CONNECT_PORT", "9999"));
+        c.host = propOrEnv("im.connect.host", "IM_CONNECT_HOST", "127.0.0.1");
         c.namesrvAddr = propOrEnv("im.connect.namesrv", "IM_ROCKETMQ_NAMESRV", "127.0.0.1:9876");
         c.redisHost = propOrEnv("im.connect.redis.host", "IM_REDIS_HOST", "127.0.0.1");
         c.redisPort = Integer.parseInt(propOrEnv("im.connect.redis.port", "IM_REDIS_PORT", "6379"));
