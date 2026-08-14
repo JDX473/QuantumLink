@@ -79,14 +79,15 @@ public class DownstreamProducer {
      * @param targetDeviceId 目标设备;null = 该用户所有在线设备(多端全推)
      * @param contentType    DownstreamEnvelope.TYPE_ACK / TYPE_MSG
      * @param data           AckPayload 或 MessagePayload 对象(connect 不解析其内部)
+     * @return true = 真的发出 MQ(调用方可用它决定是否入发件箱);false = 对方离线没推 / MQ 发送失败
      */
-    public void sendEnvelope(String targetUserId, String targetDeviceId, String contentType, Object data) {
+    public boolean sendEnvelope(String targetUserId, String targetDeviceId, String contentType, Object data) {
         DownstreamEnvelope envelope = new DownstreamEnvelope();
         envelope.setTo(targetUserId);
         envelope.setDeviceId(targetDeviceId);
         envelope.setType(contentType);
         envelope.setData(data);
-        send(JsonUtil.toJson(envelope), targetUserId, targetDeviceId, topicFor(contentType));
+        return send(JsonUtil.toJson(envelope), targetUserId, targetDeviceId, topicFor(contentType));
     }
 
     /**
@@ -145,14 +146,20 @@ public class DownstreamProducer {
         return null;
     }
 
+    /** 用户是否在线(会话表能定位到节点)。发件箱扫描器用它判断"现在能否重推" */
+    public boolean isOnline(String userId) {
+        return nodeOf(userId) != null;
+    }
+
     /**
      * 发送下行消息,查会话表定位目标节点并打 tag。
      *
      * <p>水平扩展核心:同一用户的所有在线设备 → 各自的节点 tag。
      * 多端时 targetDeviceId 为 null,需要查询该用户所有设备的会话记录。
-     * MVP 先支持单设备(直接查 userId:deviceId),多端全推后续增强。
+     *
+     * @return true = 真的发出 MQ;false = 对方离线(没推)或 MQ 发送失败
      */
-    private void send(String json, String targetUserId, String targetDeviceId, String topic) {
+    private boolean send(String json, String targetUserId, String targetDeviceId, String topic) {
         // 查 Redis 会话表定位目标节点:im:session:{userId}:{deviceId} → nodeId
         String nodeId = null;
         if (targetDeviceId != null) {
@@ -165,7 +172,7 @@ public class DownstreamProducer {
         if (nodeId == null) {
             log.info("target offline or not registered, skip downstream push: user={} device={}",
                     targetUserId, targetDeviceId);
-            return;
+            return false;
         }
 
         Message msg = new Message(topic, json.getBytes(StandardCharsets.UTF_8));
@@ -174,9 +181,10 @@ public class DownstreamProducer {
             msg.setTags(nodeId);
             SendResult result = producer.send(msg);
             log.info("downstream sent: topic={} tag={} msgId={}", topic, nodeId, result.getMsgId());
+            return true;
         } catch (Exception e) {
             log.error("downstream send failed: user={} tag={}", targetUserId, nodeId, e);
-            // Phase 2:ACK 发送失败要补偿(重试/记录未确认消息)
+            return false; // 单聊推送失败由发件箱(OutboxService)补重推;ACK 类失败靠客户端超时重传兜底
         }
     }
 

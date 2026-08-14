@@ -29,6 +29,7 @@ class MessageServiceTest {
     private DownstreamProducer downstreamProducer;
     private GroupService groupService;
     private UserCacheService userCacheService;
+    private OutboxService outboxService;
     private MessageService service;
 
     @BeforeEach
@@ -41,9 +42,10 @@ class MessageServiceTest {
         downstreamProducer = mock(DownstreamProducer.class);
         groupService = mock(GroupService.class);
         userCacheService = mock(UserCacheService.class);
+        outboxService = mock(OutboxService.class);
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         service = new MessageService(messageMapper, conversationMapper, userMapper,
-                redisTemplate, downstreamProducer, groupService, userCacheService);
+                redisTemplate, downstreamProducer, groupService, userCacheService, outboxService);
     }
 
     private MessagePayload payload(String sender, String receiver, String clientMsgId, String conv) {

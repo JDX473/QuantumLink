@@ -57,6 +57,7 @@ public class MessageService {
     private final DownstreamProducer downstreamProducer;
     private final GroupService groupService;
     private final UserCacheService userCacheService;
+    private final OutboxService outboxService;
 
     /** 并发段线程池:绑定 seq 后的落库/ACK/推送,可全并行 */
     private final ExecutorService asyncExecutor = Executors.newFixedThreadPool(
@@ -166,10 +167,15 @@ public class MessageService {
             fillSenderProfile(payload);
             PerfStats.record("profile", System.nanoTime() - tProfile);
             long tPush = System.nanoTime();
-            downstreamProducer.sendEnvelope(
+            boolean pushed = downstreamProducer.sendEnvelope(
                     payload.getReceiverId(), null,
                     DownstreamEnvelope.TYPE_MSG, payload);
             PerfStats.record("push_send", System.nanoTime() - tPush);
+            // 下推入发件箱:真发出 MQ 才登记(对方离线没推 → 不登记,补拉兜底);
+            // 对方回 DELIVER_ACK 时出箱;推丢了由扫描器重推(见 OutboxService)
+            if (pushed) {
+                outboxService.add(message.getId());
+            }
         } catch (Exception e) {
             log.error("async process error: conv={} clientMsgId={}",
                     payload.getConversationId(), payload.getClientMsgId(), e);
