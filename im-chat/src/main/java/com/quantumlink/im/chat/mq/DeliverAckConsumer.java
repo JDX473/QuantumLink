@@ -2,6 +2,7 @@ package com.quantumlink.im.chat.mq;
 
 import com.quantumlink.im.chat.entity.Message;
 import com.quantumlink.im.chat.mapper.MessageMapper;
+import com.quantumlink.im.chat.service.OutboxService;
 import com.quantumlink.im.common.protocol.AckPayload;
 import com.quantumlink.im.common.protocol.AckType;
 import com.quantumlink.im.common.protocol.DownstreamEnvelope;
@@ -38,6 +39,7 @@ public class DeliverAckConsumer {
 
     private final MessageMapper messageMapper;
     private final DownstreamProducer downstreamProducer;
+    private final OutboxService outboxService;
     private DefaultMQPushConsumer consumer;
 
     @Value("${rocketmq.name-server}")
@@ -75,8 +77,7 @@ public class DeliverAckConsumer {
             return;
         }
 
-        // ① 更新消息状态:SENT → DELIVERED(接收方已收到)
-        //    serverMsgId 下发为 String(避免 JS 精度丢失),这里转回 Long 做 DB 操作
+        // ① 解析 serverMsgId(下发为 String 避免 JS 精度丢失,这里转回 Long 做 DB 操作)
         Long serverMsgId;
         try {
             serverMsgId = Long.parseLong(ack.getServerMsgId());
@@ -84,19 +85,33 @@ public class DeliverAckConsumer {
             log.warn("bad serverMsgId: {}", ack.getServerMsgId());
             return;
         }
+
+        // ② 查消息(群消息的 serverMsgId 在 im_group_message,这里查不到 → 正常跳过,群无 DELIVER 语义)
+        Message message = messageMapper.selectById(serverMsgId);
+        if (message == null) {
+            log.info("message not found for deliver ack (group message or cleaned): serverMsgId={}",
+                    ack.getServerMsgId());
+            return;
+        }
+
+        // ③ 校验回执来源:connect 已盖章 receiverId=连接认证用户(MessageDispatcher.dispatchDeliverAck)。
+        //    防伪造 DELIVER_ACK(发送方 A 伪造 B 的回执会提前出箱 + 误标已送达,压掉对 B 的重推)。
+        if (!message.getReceiverId().equals(ack.getReceiverId())) {
+            log.warn("deliver ack sender mismatch, ignore: msgReceiver={} ackFrom={} serverMsgId={}",
+                    message.getReceiverId(), ack.getReceiverId(), ack.getServerMsgId());
+            return;
+        }
+
+        // ④ 出箱:对方已确认收到(实时推或补拉),发件箱停止重推。不在箱里 = no-op
+        outboxService.remove(serverMsgId);
+
+        // ⑤ 更新消息状态:SENT → DELIVERED(接收方已收到)
         int updated = messageMapper.markDelivered(serverMsgId);
         if (updated == 0) {
             log.warn("mark delivered no-op (maybe already delivered): serverMsgId={}", ack.getServerMsgId());
         }
 
-        // ② 查消息,拿 senderId(发送方 A),回 DELIVER 给 A
-        Message message = messageMapper.selectById(serverMsgId);
-        if (message == null) {
-            log.warn("message not found: serverMsgId={}", ack.getServerMsgId());
-            return;
-        }
-
-        // ③ 回 DELIVER 给发送方 A(统一信封 TYPE_ACK,data 为 AckPayload DELIVER)
+        // ⑥ 回 DELIVER 给发送方 A(统一信封 TYPE_ACK,data 为 AckPayload DELIVER)
         AckPayload deliver = new AckPayload();
         deliver.setAckType(AckType.DELIVER);
         deliver.setClientMsgId(message.getClientMsgId());

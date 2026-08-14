@@ -143,8 +143,9 @@ class ImClient {
         this.conversationLastSeq.set(body.conversationId, body.seq);
       }
     }
-    // 收到消息 → 回 DELIVER_ACK(通知服务端"我收到了",服务端转给发送方显示已送达)
-    if (body && body.serverMsgId != null) {
+    // 收到消息 → 回 DELIVER_ACK(通知服务端"我收到了",服务端转给发送方显示已送达 + 发件箱出箱)
+    // 群消息跳过:读扩散无 per-member DELIVER 语义,服务端会丢弃
+    if (body && body.serverMsgId != null && !(body.conversationId && body.conversationId.startsWith('g_'))) {
       this.sendFrame(FrameType.DELIVER_ACK, {
         ackType: 'DELIVER',
         serverMsgId: body.serverMsgId,
@@ -305,8 +306,19 @@ class ImClient {
         return;
       }
       const data = await res.json();
+      const isGroup = conversationId.startsWith('g_');
       for (const item of (data.messages || [])) {
         if (this.handlers.onMessage) this.handlers.onMessage(item);
+        // 对账回执:补拉回来的单聊消息也回 DELIVER_ACK(离线期间漏推的消息靠它标记
+        // 已送达 + 发件箱出箱,发送方才能看到"已送达");群消息跳过(无 DELIVER 语义)
+        if (!isGroup && item.serverMsgId != null) {
+          this.sendFrame(FrameType.DELIVER_ACK, {
+            ackType: 'DELIVER',
+            serverMsgId: item.serverMsgId,
+            seq: item.seq,
+            conversationId,
+          });
+        }
         // 更新位点
         if (item.seq > (this.conversationLastSeq.get(conversationId) || 0)) {
           this.conversationLastSeq.set(conversationId, item.seq);

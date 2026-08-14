@@ -81,7 +81,8 @@ for p in $CONNECT_PORTS; do
     echo "[skip] im-connect :$p 已在运行"
   else
     echo "[start] im-connect :$p"
-    nohup "$JAVA" -Xmx512m \
+    # IM_CONNECT_HEAP:空连接压测需调大(3 万连接 × 10-25KB/连接 ≈ 0.3-0.75GB 堆外+堆)
+    nohup "$JAVA" -Xmx${IM_CONNECT_HEAP:-512m} \
       -Dim.connect.port="$p" \
       -Dim.connect.host="${IM_CONNECT_HOST:-127.0.0.1}" \
       -Dim.connect.redis.host="${IM_REDIS_HOST:-127.0.0.1}" \
