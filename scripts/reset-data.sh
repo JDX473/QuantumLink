@@ -115,8 +115,8 @@ if [ "$DO_USERS" = 1 ]; then
   UIDS=$(mysql $MYSQL_ARGS -N -e "SELECT user_id FROM im_user WHERE username LIKE '${USER_PREFIX}'")
   CNT=$(echo "$UIDS" | grep -c . || true)
   if [ "$CNT" -gt 0 ]; then
-    IN=$(echo "$UIDS" | sed "s/^/'/;s/$/'/" | paste -sd, -)
-    mysql $MYSQL_ARGS -e "DELETE FROM im_user WHERE username LIKE '${USER_PREFIX}'; DELETE FROM im_device WHERE user_id IN ($IN); DELETE FROM im_group_member WHERE user_id IN ($IN);"
+    # 用子查询删除,不拼 IN 列表——54 万用户拼 IN 会超 shell 参数上限(Argument list too long,实测 2026-08-14)
+    mysql $MYSQL_ARGS -e "DELETE FROM im_device WHERE user_id IN (SELECT user_id FROM im_user WHERE username LIKE '${USER_PREFIX}'); DELETE FROM im_group_member WHERE user_id IN (SELECT user_id FROM im_user WHERE username LIKE '${USER_PREFIX}'); DELETE FROM im_user WHERE username LIKE '${USER_PREFIX}';"
     echo "  删除用户: $CNT 个"
   else
     echo "  无匹配用户,跳过"

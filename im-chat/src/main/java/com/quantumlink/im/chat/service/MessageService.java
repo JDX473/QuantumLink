@@ -8,6 +8,7 @@ import com.quantumlink.im.chat.mapper.ConversationMapper;
 import com.quantumlink.im.chat.mapper.MessageMapper;
 import com.quantumlink.im.chat.mapper.UserMapper;
 import com.quantumlink.im.chat.mq.DownstreamProducer;
+import com.quantumlink.im.chat.util.PerfStats;
 import com.quantumlink.im.common.protocol.AckPayload;
 import com.quantumlink.im.common.protocol.AckType;
 import com.quantumlink.im.common.protocol.DownstreamEnvelope;
@@ -88,7 +89,9 @@ public class MessageService {
         String dedupKey = DEDUP_PREFIX + payload.getSenderId() + ":" + payload.getClientMsgId();
 
         // ① 幂等检查:SETNX,首次返回 true 继续,重复直接回 ACK(带原 seq)
+        long tSetnx = System.nanoTime();
         Boolean first = redisTemplate.opsForValue().setIfAbsent(dedupKey, "1", DEDUP_TTL_SECONDS, TimeUnit.SECONDS);
+        PerfStats.record("setnx", System.nanoTime() - tSetnx);
         if (Boolean.FALSE.equals(first)) {
             log.info("duplicate message, skip store: sender={} clientMsgId={}",
                     payload.getSenderId(), payload.getClientMsgId());
@@ -101,16 +104,23 @@ public class MessageService {
 
         // ② 取号:Redis INCR 会话级发号。同一会话的消息在 Orderly 消费里串行,
         //    所以取号顺序 = 消费顺序 = 发送顺序 → seq 顺序 = 发送顺序。
+        long tIncr = System.nanoTime();
         Long seq = redisTemplate.opsForValue().increment(CONV_SEQ_PREFIX + payload.getConversationId());
+        PerfStats.record("incr", System.nanoTime() - tIncr);
 
         // ③ 绑定 seq,提交线程池并发处理(落库/ACK/推送)
         //    保序段到此结束;seq 已钉死,后续并发不会破坏顺序
-        asyncExecutor.submit(() -> asyncProcess(payload, seq));
+        long tSubmit = System.nanoTime();
+        asyncExecutor.submit(() -> {
+            PerfStats.record("async_wait", System.nanoTime() - tSubmit);
+            asyncProcess(payload, seq);
+        });
         return true;
     }
 
     /** 并发段:绑定 seq 后,落库/回 ACK/推送,可全并行 */
     private void asyncProcess(MessagePayload payload, Long seq) {
+        long tAsync = System.nanoTime();
         try {
             // ① 落库
             Message message = new Message();
@@ -124,8 +134,10 @@ public class MessageService {
             message.setStatus("SENT");
             message.setServerTime(System.currentTimeMillis());
 
+            long tInsert = System.nanoTime();
             try {
                 messageMapper.insert(message);
+                PerfStats.record("insert", System.nanoTime() - tInsert);
             } catch (org.springframework.dao.DuplicateKeyException e) {
                 // DB 唯一索引兜底:并发下 SETNX 都通过但 insert 撞唯一键 → 视为重复
                 log.info("duplicate by DB unique key: sender={} clientMsgId={}",
@@ -141,21 +153,28 @@ public class MessageService {
                     message.getId(), payload.getConversationId(), seq, payload.getSenderId());
 
             // ② 回 ACK-STORE 给发送方
+            long tAck = System.nanoTime();
             sendStoreAck(payload, message.getId(), seq);
+            PerfStats.record("ack_send", System.nanoTime() - tAck);
 
             // ③ 下行推送:把 serverMsgId + seq + 发送者资料填回 payload
             //    senderName/senderAvatar 供 UI 显示(头像+名字),不暴露 userId
             payload.setServerMsgId(String.valueOf(message.getId()));
             payload.setSeq(seq);
             payload.setServerTime(message.getServerTime());
+            long tProfile = System.nanoTime();
             fillSenderProfile(payload);
+            PerfStats.record("profile", System.nanoTime() - tProfile);
+            long tPush = System.nanoTime();
             downstreamProducer.sendEnvelope(
                     payload.getReceiverId(), null,
                     DownstreamEnvelope.TYPE_MSG, payload);
+            PerfStats.record("push_send", System.nanoTime() - tPush);
         } catch (Exception e) {
             log.error("async process error: conv={} clientMsgId={}",
                     payload.getConversationId(), payload.getClientMsgId(), e);
         }
+        PerfStats.record("async_total", System.nanoTime() - tAsync);
     }
 
     /** 填充发送者用户名 + 头像(用于 UI 显示,不暴露 userId);走用户资料缓存避免每条查 DB */

@@ -1,6 +1,7 @@
 package com.quantumlink.im.chat.mq;
 
 import com.quantumlink.im.chat.service.MessageService;
+import com.quantumlink.im.chat.util.PerfStats;
 import com.quantumlink.im.common.protocol.MessagePayload;
 import com.quantumlink.im.common.util.JsonUtil;
 import lombok.RequiredArgsConstructor;
@@ -54,13 +55,25 @@ public class UpstreamConsumer {
                 // Orderly:同一队列(同一会话)的消息串行处理,天然保序
                 for (MessageExt msg : msgs) {
                     try {
+                        long consumeStart = System.nanoTime();
+                        long nowMs = System.currentTimeMillis();
                         String json = new String(msg.getBody(), StandardCharsets.UTF_8);
                         MessagePayload payload = JsonUtil.fromJson(json, MessagePayload.class);
                         if (payload == null) {
                             log.warn("parse upstream message failed, skip");
                             continue;
                         }
+                        // 埋点:客户端 → connect produce(bornTimestamp=connect 生产时钟,同机同源)
+                        if (payload.getClientTime() != null) {
+                            PerfStats.recordMs("cli_to_broker", msg.getBornTimestamp() - payload.getClientTime());
+                        }
+                        // 埋点:上行 MQ 投递(connect produce → chat 消费)
+                        PerfStats.recordMs("mq_up", nowMs - msg.getBornTimestamp());
+                        // 再拆:produce→broker 落盘(storeTimestamp)vs broker→消费唤醒
+                        PerfStats.recordMs("mq_broker", msg.getStoreTimestamp() - msg.getBornTimestamp());
+                        PerfStats.recordMs("mq_wakeup", nowMs - msg.getStoreTimestamp());
                         messageService.handleUpstream(payload);
+                        PerfStats.record("orderly_total", System.nanoTime() - consumeStart);
                     } catch (Exception e) {
                         log.error("handle upstream message error, will retry: msgId={}", msg.getMsgId(), e);
                         // Orderly 重试:返回 SUSPEND_CURRENT_QUEUE_A_MOMENT 稍后重试当前队列
