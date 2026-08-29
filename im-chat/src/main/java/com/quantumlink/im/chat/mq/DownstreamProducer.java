@@ -119,14 +119,17 @@ public class DownstreamProducer {
             envelope.setType(contentType);
             envelope.setData(data);
             String topic = topicFor(contentType);
-            Message msg = new Message(topic, JsonUtil.toJson(envelope).getBytes(StandardCharsets.UTF_8));
+            String json = JsonUtil.toJson(envelope);
+            String serverMsgId = extractField(json, "serverMsgId");
+            Message msg = new Message(topic, json.getBytes(StandardCharsets.UTF_8));
             try {
                 msg.setTags(e.getKey());
                 SendResult result = producer.send(msg);
-                log.info("group downstream sent: topic={} tag={} members={} msgId={}",
-                        topic, e.getKey(), e.getValue().size(), result.getMsgId());
+                log.info("group downstream sent: topic={} tag={} members={} serverMsgId={} msgId={}",
+                        topic, e.getKey(), e.getValue().size(), serverMsgId, result.getMsgId());
             } catch (Exception ex) {
-                log.error("group downstream send failed: tag={} members={}", e.getKey(), e.getValue().size(), ex);
+                log.error("group downstream send failed: tag={} members={} serverMsgId={}",
+                        e.getKey(), e.getValue().size(), serverMsgId, ex);
             }
         }
     }
@@ -151,6 +154,13 @@ public class DownstreamProducer {
         return nodeOf(userId) != null;
     }
 
+    /** 从信封 JSON 提取单个字符串字段(避免整对象反序列化;用于日志归因)。查不到返回空串。 */
+    private static String extractField(String json, String field) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\"" + field + "\"\\s*:\\s*\"([^\"]+)\"").matcher(json);
+        return m.find() ? m.group(1) : "";
+    }
+
     /**
      * 发送下行消息,查会话表定位目标节点并打 tag。
      *
@@ -160,6 +170,10 @@ public class DownstreamProducer {
      * @return true = 真的发出 MQ;false = 对方离线(没推)或 MQ 发送失败
      */
     private boolean send(String json, String targetUserId, String targetDeviceId, String topic) {
+        // 从信封 JSON 提取业务字段用于日志归因（日志查询平台据此派生 trace_id）
+        String serverMsgId = extractField(json, "serverMsgId");
+        String conversationId = extractField(json, "conversationId");
+
         // 查 Redis 会话表定位目标节点:im:session:{userId}:{deviceId} → nodeId
         String nodeId = null;
         if (targetDeviceId != null) {
@@ -170,8 +184,8 @@ public class DownstreamProducer {
         }
 
         if (nodeId == null) {
-            log.info("target offline or not registered, skip downstream push: user={} device={}",
-                    targetUserId, targetDeviceId);
+            log.info("target offline or not registered, skip downstream push: user={} device={} serverMsgId={} conv={}",
+                    targetUserId, targetDeviceId, serverMsgId, conversationId);
             return false;
         }
 
@@ -180,10 +194,12 @@ public class DownstreamProducer {
             // 打目标节点 tag:只有订阅该 tag 的 connect 节点消费
             msg.setTags(nodeId);
             SendResult result = producer.send(msg);
-            log.info("downstream sent: topic={} tag={} msgId={}", topic, nodeId, result.getMsgId());
+            // serverMsgId 是关键归因字段:让"某条消息是否推下去"可被日志平台追到(修复推送盲区)
+            log.info("downstream sent: topic={} tag={} serverMsgId={} conv={} msgId={}",
+                    topic, nodeId, serverMsgId, conversationId, result.getMsgId());
             return true;
         } catch (Exception e) {
-            log.error("downstream send failed: user={} tag={}", targetUserId, nodeId, e);
+            log.error("downstream send failed: user={} tag={} serverMsgId={}", targetUserId, nodeId, serverMsgId, e);
             return false; // 单聊推送失败由发件箱(OutboxService)补重推;ACK 类失败靠客户端超时重传兜底
         }
     }

@@ -1,0 +1,20 @@
+# im-logsearch 日志查询平台配置
+# 默认指向 IM 项目根目录的日志(../ 相对本模块运行目录 = 仓库根)
+server:
+  port: ${IM_LOGSEARCH_PORT:8083}
+
+spring:
+  application:
+    name: im-logsearch
+
+logsearch:
+  # Lucene 索引目录(本地磁盘)
+  index-dir: ${IM_LOGSEARCH_INDEX:./data/logsearch-index}
+  # 扫描哪些目录的日志,逗号分隔(默认仓库根,即 E:\QIUZHAO\IM 下所有 *.log)
+  log-dirs: ${IM_LOGSEARCH_LOG_DIRS:../}
+  # 只收录该 glob 匹配的日志文件
+  log-pattern: "${IM_LOGSEARCH_LOG_PATTERN:.*\\.log}"
+
+logging:
+  level:
+    com.quantumlink.im.logsearch: INFO

@@ -16,6 +16,7 @@
         <module>im-gateway</module>
         <module>im-connect</module>
         <module>im-chat</module>
+        <module>im-logsearch</module>
         <module>im-loadtest</module>
     </modules>
 
@@ -34,6 +35,7 @@
         <lombok.version>1.18.34</lombok.version>
         <mysql.version>8.3.0</mysql.version>
         <slf4j.version>2.0.13</slf4j.version>
+        <lucene.version>9.11.1</lucene.version>
     </properties>
 
     <dependencyManagement>
@@ -100,6 +102,23 @@
                 <groupId>com.mysql</groupId>
                 <artifactId>mysql-connector-j</artifactId>
                 <version>${mysql.version}</version>
+            </dependency>
+
+            <!-- Lucene:im-logsearch 内嵌全文索引(Lucene 即 ES 的搜索引擎内核,零中间件) -->
+            <dependency>
+                <groupId>org.apache.lucene</groupId>
+                <artifactId>lucene-core</artifactId>
+                <version>${lucene.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.lucene</groupId>
+                <artifactId>lucene-queryparser</artifactId>
+                <version>${lucene.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.lucene</groupId>
+                <artifactId>lucene-analysis-common</artifactId>
+                <version>${lucene.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

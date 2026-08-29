@@ -34,3 +34,10 @@ appendonly.aof
 dump.rdb
 *.rdb
 *.aof
+
+# 运行时产物(日志平台索引等)
+/data/
+im-logsearch/data/
+
+# 日志归档(tmp-*.log.20260818 之类)
+/tmp-*.log.*
